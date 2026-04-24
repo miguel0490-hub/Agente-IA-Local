@@ -1,143 +1,140 @@
+import streamlit as st
 import os
-import sys
 import json
 import requests
 from google import genai
 from google.genai import types
+from groq import Groq
 from dotenv import load_dotenv
 
-# 1. INICIALIZAR SEGURIDAD Y CLAVES
+# 1. CONFIGURACIÓN DE PÁGINA Y SEGURIDAD
+st.set_page_config(page_title="Agente IA Local v2.0", page_icon="🤖", layout="wide")
 load_dotenv()
+
+# Recuperar claves del .env
 clave_gemini = os.getenv("GEMINI_API_KEY")
+clave_groq = os.getenv("GROQ_API_KEY")
 
-# 2. EL PROMPT MAESTRO
+# 2. PROMPT MAESTRO
 INSTRUCCIONES_SISTEMA = """
-Actúa como un Senior Software Engineer, Experto en Ciberseguridad y Tech Lead personal.
-Tu misión es ser mi asistente diario para resolver problemas de código, diseñar arquitecturas y crear scripts desde cero en cualquier lenguaje o framework que necesite.
-
-REGLAS INQUEBRANTABLES:
-1. ANÁLISIS PREVIO: Antes de escribir código, analiza el problema paso a paso y determina la mejor solución técnica.
-2. CÓDIGO LIMPIO Y ESCALABLE: Aplica principios de código limpio, divide la lógica en funciones pequeñas y usa una nomenclatura clara y autodescriptiva.
-3. SEGURIDAD "ZERO-TRUST": Jamás expongas, solicites o simules contraseñas, API Keys, URLs de bases de datos o tokens. Todo dato confidencial debe manejarse siempre mediante variables de entorno.
-4. EXPLICACIÓN ESTRATÉGICA: Comenta el código para explicar el "por qué" de lógicas complejas, no lo evidente.
-5. VERSATILIDAD: Adapta tus soluciones al lenguaje, framework o entorno específico que te solicite en cada momento.
-
-ESTRUCTURA DE TU RESPUESTA:
-- 💡 Análisis: [Tu diagnóstico o enfoque técnico]
-- 🛠️ Código: [Bloque de código formateado, modular y listo para usar]
-- 🛡️ Notas: [Breves indicaciones sobre dependencias, seguridad o ejecución]
+Actúa como un Senior Software Engineer y Tech Lead.
+REGLAS: Análisis previo, Código limpio, Seguridad Zero-Trust y Explicación estratégica.
 """
 
-# Variable global para mantener viva la conexión con la API de Google
-cliente_gemini = None
-
-# 3. FUNCIONES DE CONEXIÓN A LOS MOTORES
-def iniciar_gemini():
-    """Configura y devuelve una sesión de chat con el SDK de Gemini."""
-    global cliente_gemini 
-    
-    if not clave_gemini:
-        print("❌ ERROR: No se encontró GEMINI_API_KEY en el archivo .env")
-        sys.exit()
-    
-    # Inicializamos el cliente oficial de Google
-    cliente_gemini = genai.Client(api_key=clave_gemini)
-    
-    configuracion = types.GenerateContentConfig(
-        system_instruction=INSTRUCCIONES_SISTEMA,
-        temperature=0.7
-    )
-    
-    # Endpoint oficial y estable acordado: Gemini 2.5 Pro
-    return cliente_gemini.chats.create(model='gemini-2.5-pro', config=configuracion)
-
-def consultar_gemini(chat_session, mensaje_usuario):
-    """Envía el mensaje a Gemini y lo imprime en tiempo real (streaming)."""
+# 3. LÓGICA DE LOS MOTORES (BACKEND)
+def consultar_gemini(mensaje, historial_st):
+    """Envía el mensaje a Gemini 2.5 Pro."""
     try:
-        respuesta = chat_session.send_message_stream(mensaje_usuario)
+        cliente = genai.Client(api_key=clave_gemini)
+        config = types.GenerateContentConfig(system_instruction=INSTRUCCIONES_SISTEMA, temperature=0.7)
+        chat = cliente.chats.create(model='gemini-2.5-pro', config=config)
+        
+        respuesta = chat.send_message_stream(mensaje)
         for fragmento in respuesta:
-            print(fragmento.text, end="", flush=True)
-        print("\n")
-    except Exception as error:
-        print(f"\n❌ Error crítico al conectar con Gemini: {error}")
+            yield fragmento.text
+    except Exception as e:
+        yield f"❌ Error Gemini: {e}"
 
-def consultar_ollama(historial, mensaje_usuario):
-    """Envía el mensaje al motor local de Ollama y lo imprime en tiempo real."""
-    url_local = "http://localhost:11434/api/chat"
-    historial.append({"role": "user", "content": mensaje_usuario})
-    
-    paquete_datos = {
-        "model": "qwen2.5-coder:3b", 
-        "messages": historial,
-        "stream": True 
-    }
-    
-    respuesta_completa = ""
+def consultar_ollama(mensaje, historial_st):
+    """Envía el mensaje al motor local de Ollama."""
+    url = "http://localhost:11434/api/chat"
+    mensajes_ollama = [{"role": "system", "content": INSTRUCCIONES_SISTEMA}]
+    for m in historial_st:
+        mensajes_ollama.append({"role": m["role"], "content": m["content"]})
+    mensajes_ollama.append({"role": "user", "content": mensaje})
+
     try:
-        respuesta = requests.post(url_local, json=paquete_datos, stream=True)
-        respuesta.raise_for_status()
-        
-        for linea in respuesta.iter_lines():
+        res = requests.post(url, json={"model": "qwen2.5-coder:3b", "messages": mensajes_ollama, "stream": True}, stream=True)
+        for linea in res.iter_lines():
             if linea:
-                texto = json.loads(linea)["message"]["content"]
-                print(texto, end="", flush=True)
-                respuesta_completa += texto
-                
-        print("\n")
-        historial.append({"role": "assistant", "content": respuesta_completa})
-        
-    except requests.exceptions.RequestException as error:
-        print(f"\n❌ Error crítico al conectar con el motor local: {error}")
-        historial.pop() 
+                yield json.loads(linea)["message"]["content"]
+    except Exception as e:
+        yield f"❌ Error Ollama: {e}"
 
-# 4. INTERFAZ DE TERMINAL Y MENÚ DE SELECCIÓN
-if __name__ == "__main__":
-    print("===================================================")
-    print("        🤖 AGENTE DE IA HÍBRIDO INICIADO           ")
-    print("===================================================")
-    print(" Selecciona el motor para esta sesión de código:   ")
-    print("  1. Modo Local (Ollama - Privado y sin internet)  ")
-    print("  2. Modo Cloud (Gemini 2.5 Pro - Potencia Máxima) ")
-    print("===================================================\n")
+def consultar_groq(mensaje, historial_st):
+    """Envía el mensaje a la API ultrarrápida de Groq usando Llama 3.3."""
+    try:
+        if not clave_groq:
+            yield "❌ ERROR: No se encontró GROQ_API_KEY en el archivo .env"
+            return
+            
+        cliente = Groq(api_key=clave_groq)
+        mensajes_groq = [{"role": "system", "content": INSTRUCCIONES_SISTEMA}]
+        for m in historial_st:
+            mensajes_groq.append({"role": m["role"], "content": m["content"]})
+        mensajes_groq.append({"role": "user", "content": mensaje})
+
+        # Utilizamos el modelo actualizado y soportado por Groq
+        stream = cliente.chat.completions.create(
+            messages=mensajes_groq,
+            model="llama-3.3-70b-versatile", 
+            temperature=0.7,
+            stream=True,
+        )
+        for chunk in stream:
+            if chunk.choices[0].delta.content is not None:
+                yield chunk.choices[0].delta.content
+    except Exception as e:
+        yield f"❌ Error Groq: {e}"
+
+# 4. INTERFAZ DE USUARIO (FRONTEND)
+st.title("🤖 Agente de IA Híbrido v2.0")
+
+# Sidebar para configuración
+with st.sidebar:
+    st.header("Configuración")
+    motor_elegido = st.selectbox("Elige el Cerebro:", [
+        "Gemini 2.5 Pro (Cloud)", 
+        "Groq Llama 3.3 (Ultra-rápido)",
+        "Ollama Qwen (Local)"
+    ])
+    st.divider()
+    archivo_subido = st.file_uploader("📁 Adjuntar archivo para analizar", type=['py', 'js', 'txt', 'html', 'css', 'env'])
+    if st.button("Limpiar Chat"):
+        st.session_state.messages = []
+        st.rerun()
+
+# Inicializar historial en la sesión
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+# Mostrar mensajes previos
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+# CAJA DE ENTRADA
+if prompt := st.chat_input("¿En qué puedo ayudarte hoy?"):
     
-    modo = input("Elige una opción (1 o 2): ").strip()
+    # Manejo de archivos adjuntos y adición al contexto
+    contexto_archivo = ""
+    if archivo_subido is not None:
+        contenido = archivo_subido.read().decode("utf-8")
+        contexto_archivo = f"\n\n[ARCHIVO ADJUNTO: {archivo_subido.name}]\n{contenido}\n"
     
-    if modo == "1":
-        print("\n🟢 Iniciando motor local (Qwen 3B)...")
-        motor_actual = "local"
-        historial_local = [{"role": "system", "content": INSTRUCCIONES_SISTEMA}]
-    elif modo == "2":
-        print("\n🔵 Conectando con servidores de Google (Gemini 2.5 Pro)...")
-        motor_actual = "gemini"
-        chat_gemini = iniciar_gemini()
-    else:
-        print("Opción no válida. Cerrando los protocolos del agente.")
-        sys.exit()
+    prompt_final = prompt + contexto_archivo
 
-    print("\n--- Sistema listo. Escribe tu mensaje, pulsa Enter y luego escribe 'ENVIAR' en una nueva línea para procesar. Escribe 'salir' para terminar. ---\n")
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
 
-    while True:
-        print("Tú > ")
-        lineas_usuario = []
+    with st.chat_message("assistant"):
+        response_placeholder = st.empty()
+        full_response = ""
         
-        while True:
-            linea = input()
-            if linea.strip() == 'ENVIAR':
-                break
-            lineas_usuario.append(linea)
-            
-        usuario = "\n".join(lineas_usuario)
-        
-        if usuario.strip().lower() in ['salir', 'exit', 'quit']:
-            print("Cerrando los protocolos del agente. ¡Buen código!")
-            sys.exit()
-            
-        if usuario.strip() == "":
-            continue
-            
-        print("\nAgente > ", end="")
-        
-        if motor_actual == "local":
-            consultar_ollama(historial_local, usuario)
+        # Enrutamiento al motor seleccionado
+        if "Gemini" in motor_elegido:
+            generador = consultar_gemini(prompt_final, st.session_state.messages[:-1])
+        elif "Groq" in motor_elegido:
+            generador = consultar_groq(prompt_final, st.session_state.messages[:-1])
         else:
-            consultar_gemini(chat_gemini, usuario)
+            generador = consultar_ollama(prompt_final, st.session_state.messages[:-1])
+            
+        # Imprimir en pantalla en tiempo real (streaming)
+        for chunk in generador:
+            full_response += chunk
+            response_placeholder.markdown(full_response + "▌")
+        
+        response_placeholder.markdown(full_response)
+    
+    st.session_state.messages.append({"role": "assistant", "content": full_response})
