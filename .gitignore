@@ -5,3 +5,7 @@
 venv/
 __pycache__/
 *.pyc
+
+# Imágenes o iconos
+*.jpg
+*.ico
