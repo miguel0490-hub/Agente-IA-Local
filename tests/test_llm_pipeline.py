@@ -3,7 +3,7 @@ Test definitivo: llama al LLM real (Groq) y captura exactamente lo que genera,
 luego lo pasa por el parser y el FileFactory exactamente como lo hace agente.py.
 """
 import os, sys
-sys.path.insert(0, '.')
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from dotenv import load_dotenv
 load_dotenv()

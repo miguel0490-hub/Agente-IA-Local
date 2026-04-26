@@ -1,10 +1,10 @@
 @echo off
-title Agente IA Local v2.0
+title SuperAgente IA Pro v4.1
 color 0A
 echo ==========================================
-echo   Despertando al Agente de IA Local v2.0...
+echo   Despertando al SuperAgente IA Pro v4.1...
 echo   Se abrira una pestana en tu navegador.
 echo ==========================================
 call venv\Scripts\activate
-streamlit run src\agente.py
+streamlit run app.py
 pause

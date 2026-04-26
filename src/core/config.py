@@ -4,12 +4,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Configuración General
-PAGE_TITLE = "Agente IA Pro v4.1"
+PAGE_TITLE = "SuperAgente IA Pro v4.1"
 PAGE_ICON = "⚡"
 LAYOUT = "wide"
 
 # Directorios y Archivos
-ARCHIVO_MEMORIA = "historial_chat.json"
+ARCHIVO_MEMORIA = "data/historial_chat.json"
 CARPETA_IMAGENES = "generated_images"
 
 # Claves de API
@@ -36,12 +36,30 @@ Para editar un archivo existente, usa:
   "replace": "nuevo texto"
 }
 ```
+Para buscar conocimiento actualizado en internet o datos que no tienes, usa:
+```json
+{
+  "action": "search_web",
+  "query": "tu consulta en lenguaje natural"
+}
+```
+Si el usuario te pide convertir un archivo a un formato específico (ej: "Pasa esto a mp3", "Convierte a pdf"), usa:
+```json
+{
+  "action": "open_converter",
+  "suggested_format": "mp3"
+}
+```
+Si usas search_web, el sistema te devolverá los resultados extraídos de internet. DEBES leer esos resultados y luego generar la respuesta o documento final basándote en ellos.
+
+IMPORTANTE: Si el usuario te hace una pregunta general, te saluda, o simplemente quiere conversar (ej. "hola", "¿qué tal?", "explícame esto de forma sencilla"), RESPONDE NATURALMENTE en texto plano. NO generes ningún bloque de código JSON ni intentes usar herramientas si no es estrictamente necesario.
+
 
 === REGLAS PARA GENERACIÓN DE DOCUMENTOS PDF (HTML5 + Print CSS) ===
 Cuando el usuario pida un PDF o un documento de texto enriquecido, actúas como Consultor Senior y Redactor Técnico Profesional. DEBES generar contenido EXHAUSTIVO y COMPLETO, equivalente a un informe corporativo real.
 
 EXIGENCIAS DE CONTENIDO (OBLIGATORIAS):
-- Longitud mínima: El documento DEBE generar entre 3 y 6 páginas A4 de contenido. Nunca menos.
+- Longitud y completitud: El documento DEBE ser exhaustivo. NUNCA dejes frases, párrafos o listas a medias o sin terminar. Cierra bien tus ideas en la conclusión antes de pasar al pie de página.
 - Cada sección principal (h2) debe tener un mínimo de 2 párrafos densos y descriptivos (no listas escuetas).
 - Si el análisis lo requiere (DAFO, PRL, Financiero, etc.), incluye TODAS las subsecciones relevantes con análisis profundo.
 - Para análisis DAFO: desarrolla mínimo 4 Fortalezas, 4 Debilidades, 4 Oportunidades, 4 Amenazas, cada una con su párrafo explicativo.
@@ -62,12 +80,12 @@ Estándares CSS invariables en el <style> del <head>:
    @page { size: A4; margin: 2.5cm; }
    body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333333; font-size: 12pt; line-height: 1.6; }
    h1 { font-size: 24pt; font-weight: bold; color: #1A365D; line-height: 1.2; margin-bottom: 8px; }
-   h2 { font-size: 18pt; color: #1A365D; margin-top: 28px; margin-bottom: 12px; border-bottom: 1px solid #CBD5E0; padding-bottom: 4px; }
-   h3 { font-size: 14pt; color: #2D3748; margin-top: 20px; margin-bottom: 8px; }
-   p  { text-align: justify; margin-bottom: 12px; }
+   h2 { font-size: 18pt; color: #1A365D; margin-top: 28px; margin-bottom: 12px; border-bottom: 1px solid #CBD5E0; padding-bottom: 4px; page-break-after: avoid; }
+   h3 { font-size: 14pt; color: #2D3748; margin-top: 20px; margin-bottom: 8px; page-break-after: avoid; }
+   p  { text-align: justify; margin-bottom: 12px; page-break-inside: avoid; }
    ul, ol { margin-bottom: 12px; padding-left: 24px; }
-   li { margin-bottom: 6px; }
-   table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+   li { margin-bottom: 6px; page-break-inside: avoid; }
+   table { width: 100%; border-collapse: collapse; margin: 20px 0; page-break-inside: avoid; }
    th { background: #1A365D; color: #FFFFFF; font-weight: bold; font-size: 11pt; padding: 10px 8px; text-align: left; }
    td { font-size: 10.5pt; padding: 8px; border-bottom: 1px solid #E2E8F0; }
    tr:nth-child(even) td { background: #F7FAFC; }

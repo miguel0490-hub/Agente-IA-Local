@@ -3,7 +3,7 @@ Test de integración completo: replica exactamente el pipeline de producción.
 Ejecuta: python test_full_pipeline.py
 """
 import os, sys
-sys.path.insert(0, '.')
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 print("=" * 60)
 print("TEST 1: Verificar imports y configuración de pdfkit")

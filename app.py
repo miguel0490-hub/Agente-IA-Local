@@ -2,9 +2,6 @@ import streamlit as st
 import os
 import sys
 
-# Agregar el directorio raíz del proyecto al PYTHONPATH para que reconozca el módulo 'src'
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
 import json
 import requests
 from src.services.llm_provider import GeminiProvider, GroqProvider, OllamaProvider
@@ -48,7 +45,7 @@ st.markdown("""
         text-shadow: 0 0 20px rgba(0, 242, 254, 0.4);
         margin-bottom: 0px;
         line-height: 1.2;
-    ">⚡ Agente IA Pro v4.1</h1>
+    ">⚡ SuperAgente IA Pro v4.1</h1>
     <p style="
         font-size: 1.1rem;
         color: #A0AAB5;
@@ -62,6 +59,46 @@ st.markdown("""
 
 if "messages" not in st.session_state: st.session_state.messages = cargar_memoria()
 
+# ------------------ PANEL DE CONVERSIÓN (DIALOG) ------------------
+from src.services.converter_service import run_conversion
+
+@st.dialog("🔄 Estudio de Conversión Universal")
+def panel_conversor():
+    st.write("Sube cualquier archivo (video, audio, imagen, documento) y conviértelo al instante.")
+    archivo_conv = st.file_uploader("📥 Arrastra tu archivo aquí", key="uploader_conv")
+    
+    if archivo_conv:
+        st.info(f"Archivo detectado: {archivo_conv.name}")
+        formato_destino = st.text_input("Formato de destino (ej: mp3, pdf, docx, png)", value=st.session_state.get("suggested_format", ""))
+        
+        if st.button("🚀 Convertir", use_container_width=True):
+            if formato_destino:
+                formato_destino = formato_destino.strip().replace(".", "")
+                with st.spinner(f"Convirtiendo a .{formato_destino} (Aceleración Local)..."):
+                    import uuid
+                    os.makedirs("data/temp", exist_ok=True)
+                    input_ext = os.path.splitext(archivo_conv.name)[1]
+                    temp_input = f"data/temp/in_{uuid.uuid4().hex[:8]}{input_ext}"
+                    with open(temp_input, "wb") as f:
+                        f.write(archivo_conv.getbuffer())
+                    
+                    output_name = f"conv_{uuid.uuid4().hex[:8]}.{formato_destino}"
+                    temp_output = os.path.join(CARPETA_IMAGENES, output_name)
+                    
+                    exito = run_conversion(temp_input, temp_output)
+                    
+                    if exito:
+                        st.success("✅ ¡Conversión Exitosa!")
+                        with open(temp_output, "rb") as f:
+                            st.download_button(label=f"⬇️ Descargar {output_name}", data=f, file_name=output_name, use_container_width=True)
+                    else:
+                        st.error("❌ Falló la conversión. Asegúrate de tener FFmpeg / Pandoc instalados localmente.")
+                    
+                    if os.path.exists(temp_input):
+                        os.remove(temp_input)
+# ------------------------------------------------------------------
+
+
 # --- LÓGICA DE ENRUTAMIENTO (TECH LEAD) ---
 if "motor_activo_idx" not in st.session_state: st.session_state.motor_activo_idx = 0
 if "tech_lead_msg" not in st.session_state: st.session_state.tech_lead_msg = ""
@@ -70,11 +107,11 @@ def recomendar_motor():
     tarea = st.session_state.tarea_selector
     if "Arte visual" in tarea or "Analizar" in tarea:
         st.session_state.motor_activo_idx = 1
-        st.session_state.motor_manual_selector = "Gemini 2.5 Pro (Análisis Multimedia y Arte)"
+        st.session_state.motor_manual_selector = "Gemini 3.1 Pro (Análisis Multimedia y Arte)"
         if "Arte" in tarea:
-            st.session_state.tech_lead_msg = "He asignado a **Gemini 2.5 Pro** porque tiene un motor de difusión nativo insuperable para generar arte visual."
+            st.session_state.tech_lead_msg = "He asignado a **Gemini 3.1 Pro** porque tiene un motor de difusión nativo insuperable para generar arte visual."
         else:
-            st.session_state.tech_lead_msg = "He asignado a **Gemini 2.5 Pro**. Su API nativa soporta la carga de vídeos enteros para analizarlos frame a frame."
+            st.session_state.tech_lead_msg = "He asignado a **Gemini 3.1 Pro**. Su API nativa soporta la carga de vídeos enteros para analizarlos frame a frame."
     elif "Software" in tarea or "Documento" in tarea:
         st.session_state.motor_activo_idx = 0
         st.session_state.motor_manual_selector = "Groq Llama 3.3 (Lead Software Engineer / Creador)"
@@ -110,11 +147,14 @@ with st.sidebar:
         st.success(st.session_state.tech_lead_msg)
         
     st.divider()
-    
+    if st.button("🔄 Abrir Estudio de Conversión", use_container_width=True):
+        st.session_state["suggested_format"] = ""
+        panel_conversor()
+        
     st.header("⚙️ Configuración Manual")
     motor = st.selectbox("Cerebro Activo:", [
         "Groq Llama 3.3 (Lead Software Engineer / Creador)", 
-        "Gemini 2.5 Pro (Análisis Multimedia y Arte)", 
+        "Gemini 3.1 Pro (Análisis Multimedia y Arte)", 
         "Ollama Qwen (Desarrollo Local Zero-Trust)"
     ], index=st.session_state.motor_activo_idx, key="motor_manual_selector")
     
@@ -206,8 +246,8 @@ if prompt := st.chat_input("Escribe tu consulta o pídele que genere una imagen.
 
         with st.chat_message("assistant", avatar="🤖"):
             res_placeholder = st.empty()
-            full_res = ""
             
+            # Preparamos las cargas iniciales según el motor
             if "Gemini" in motor:
                 carga_util = [prompt_final]
                 if imagen_adjunta: carga_util.append(imagen_adjunta)
@@ -225,37 +265,100 @@ if prompt := st.chat_input("Escribe tu consulta o pídele que genere una imagen.
                             st.stop()
                     carga_util.append(video_file)
                 provider = GeminiProvider()
-                gen = provider.stream_chat(carga_util, st.session_state.messages[:-1])
             elif "Groq" in motor:
                 if imagen_adjunta: st.warning("⚠️ Este motor ignora imágenes locales.")
                 provider = GroqProvider()
-                gen = provider.stream_chat(prompt_final, st.session_state.messages[:-1])
             else:
                 if imagen_adjunta: st.warning("⚠️ Ollama ignora imágenes locales.")
                 provider = OllamaProvider()
-                gen = provider.stream_chat(prompt_final, st.session_state.messages[:-1])
-                
-            for chunk in gen:
-                full_res += chunk
-                res_placeholder.markdown(full_res + "▌")
-                
-            # Post-procesamiento de herramientas universales
-            from src.core.agent_tools import parse_tool_calls
-            from src.services.file_factory import FileFactory
+
+            max_iteraciones = 2
+            iteracion = 0
             
-            clean_res, tools = parse_tool_calls(full_res)
-            res_placeholder.markdown(clean_res)
+            while iteracion < max_iteraciones:
+                iteracion += 1
+                full_res = ""
+                
+                # Ejecutar el stream
+                if "Gemini" in motor:
+                    gen = provider.stream_chat(carga_util, st.session_state.messages[:-1])
+                elif "Groq" in motor:
+                    gen = provider.stream_chat(prompt_final, st.session_state.messages[:-1])
+                else:
+                    gen = provider.stream_chat(prompt_final, st.session_state.messages[:-1])
+                    
+                for chunk in gen:
+                    full_res += chunk
+                    res_placeholder.markdown(full_res + "▌")
+                    
+                # [NUEVO] Failover System para Groq (Rate Limit 429)
+                if ("rate_limit" in full_res.lower() or "429" in full_res) and "Groq" in motor:
+                    res_placeholder.empty()
+                    st.warning("⚠️ Límite de uso de Groq alcanzado. Redirigiendo tu consulta al motor Gemini de alta disponibilidad...")
+                    # Configurar Gemini como Failover
+                    from src.services.llm_provider import GeminiProvider
+                    provider = GeminiProvider()
+                    carga_util = [prompt_final]
+                    if imagen_adjunta: carga_util.append(imagen_adjunta)
+                    # Reiniciar generación
+                    full_res = ""
+                    gen = provider.stream_chat(carga_util, st.session_state.messages[:-1])
+                    for chunk in gen:
+                        full_res += chunk
+                        res_placeholder.markdown(full_res + "▌")
+                        
+                # Post-procesamiento
+                from src.core.agent_tools import parse_tool_calls
+                from src.services.file_factory import FileFactory
+                
+                clean_res, tools = parse_tool_calls(full_res)
+                res_placeholder.markdown(clean_res)
+                
+                # 1. Comprobar si hay búsqueda en internet
+                search_tool = next((t for t in tools if t.get("action") == "search_web"), None)
+                if search_tool:
+                    query = search_tool.get("query", "")
+                    with st.spinner(f"Buscando en la web: '{query}'..."):
+                        from src.services.web_search import search_web
+                        resultados_web = search_web(query)
+                        
+                    st.info(f"🌐 Búsqueda web completada: {query}")
+                    
+                    # Añadir interacciones a la memoria temporal de esta sesión
+                    st.session_state.messages.append({"role": "assistant", "content": clean_res})
+                    msg_sistema = f"RESULTADOS DE BÚSQUEDA PARA '{query}':\n{resultados_web}\n\nPor favor, usa esta información para generar la respuesta definitiva o el documento."
+                    st.session_state.messages.append({"role": "user", "content": msg_sistema})
+                    
+                    # Preparar el siguiente input para el LLM
+                    if "Gemini" in motor:
+                        carga_util = [msg_sistema]
+                    else:
+                        prompt_final = msg_sistema
+                        
+                    res_placeholder = st.empty()
+                    continue # Volver al inicio del while para generar la respuesta final
+                else:
+                    break # Salimos del bucle si no hay búsquedas pendientes
             
+            # 2. Comprobar si hay archivos generados (create_file, edit_file) o apertura de conversor
             file_paths = []
             if tools:
                 factory = FileFactory(output_dir=CARPETA_IMAGENES)
                 for tool in tools:
+                    if tool.get("action") == "search_web":
+                        continue
+                    if tool.get("action") == "open_converter":
+                        st.session_state["suggested_format"] = tool.get("suggested_format", "")
+                        st.success(f"🤖 ¡Abriendo panel de conversión para ti (Formato: {st.session_state['suggested_format']})!")
+                        panel_conversor()
+                        continue
+                    
                     path = factory.execute_tool(tool)
                     if path:
                         file_paths.append(path)
                         render_download_button(path)
                     else:
-                        st.error(f"❌ La herramienta `{tool.get('action')}` falló internamente al generar el archivo. (Comprueba la consola para más detalles).")
+                        st.error(f"❌ La herramienta `{tool.get('action')}` falló internamente.")
         
         st.session_state.messages.append({"role": "assistant", "content": clean_res, "file_paths": file_paths})
         guardar_memoria(st.session_state.messages)

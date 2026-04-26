@@ -21,7 +21,11 @@ class GeminiProvider(LLMProvider):
         try:
             cliente = ggenai.Client(api_key=CLAVE_GEMINI)
             model_name = 'gemini-2.5-pro'
-            config = types.GenerateContentConfig(system_instruction=INSTRUCCIONES_SISTEMA, temperature=0.7)
+            config = types.GenerateContentConfig(
+                system_instruction=INSTRUCCIONES_SISTEMA, 
+                temperature=0.7,
+                max_output_tokens=8192
+            )
             chat = cliente.chats.create(model=model_name, config=config)
             for frag in chat.send_message_stream(carga_util):
                 yield frag.text
@@ -73,7 +77,13 @@ class GroqProvider(LLMProvider):
                 if m.get("content"):
                     mensajes.append({"role": m["role"], "content": m["content"]})
             mensajes.append({"role": "user", "content": mensaje})
-            stream = cliente.chat.completions.create(model=self.model, messages=mensajes, stream=True)
+            stream = cliente.chat.completions.create(
+                model=self.model, 
+                messages=mensajes, 
+                stream=True,
+                max_tokens=8192,
+                temperature=0.3
+            )
             for chunk in stream:
                 if chunk.choices[0].delta.content: yield chunk.choices[0].delta.content
         except Exception as e: 

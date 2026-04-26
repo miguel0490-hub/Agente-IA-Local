@@ -23,14 +23,17 @@ def parse_tool_calls(text: str) -> tuple[str, list]:
         raw_block = match.group(1).strip()
         data = _robust_parse(raw_block)
 
-        if data and data.get("action") in ("create_file", "edit_file"):
+        if data and data.get("action") in ("create_file", "edit_file", "search_web", "open_converter"):
             # Limpiar la clave interna de diagnóstico antes de almacenar
             data.pop("_recovered", None)
             tools_to_run.append(data)
-            aviso = (
-                f"\n> 🛠️ **Herramienta Ejecutada:** "
-                f"`{data['action']}` en `{data.get('filename', 'archivo')}`\n"
-            )
+            if data['action'] == "search_web":
+                aviso = f"\n> 🌐 **Búsqueda Web Solicitada:** `{data.get('query', '')}`\n"
+            else:
+                aviso = (
+                    f"\n> 🛠️ **Herramienta Ejecutada:** "
+                    f"`{data['action']}` en `{data.get('filename', 'archivo')}`\n"
+                )
             clean_text = clean_text.replace(match.group(0), aviso)
 
     return clean_text, tools_to_run
