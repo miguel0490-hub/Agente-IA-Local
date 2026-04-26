@@ -47,6 +47,19 @@ def test_json_sin_action_no_rompe_parser():
         print(f"[FAIL] KeyError no manejado: {e}")
         sys.exit(1)
 
+def test_raw_json_con_texto_alrededor():
+    """Verifica que el fallback detecta JSON crudo incluso con texto antes y después."""
+    respuesta_llm = (
+        "Claro, aquí tienes el archivo:\n"
+        '{"action": "create_file", "filename": "app.py", "content": "print(\'hola\')"}\n'
+        "Espero que te sirva."
+    )
+    clean, tools = parse_tool_calls(respuesta_llm)
+    assert len(tools) == 1, "Debería haber detectado 1 tool en el JSON crudo"
+    assert tools[0]["filename"] == "app.py"
+    assert "🛠️ **Herramienta Ejecutada:**" in clean
+    print("[OK] test_raw_json_con_texto_alrededor: PASADO")
+
 def test_respuesta_vacia_no_rompe():
     """Una respuesta sin bloques JSON debe devolver texto limpio y lista vacia."""
     respuesta_llm = "Hola! Soy el SuperAgente, encantado de ayudarte."
@@ -59,5 +72,6 @@ if __name__ == "__main__":
     print("\n=== TEST SUITE: agent_tools parser fix ===\n")
     test_html_con_src_no_rompe_parser()
     test_json_sin_action_no_rompe_parser()
+    test_raw_json_con_texto_alrededor()
     test_respuesta_vacia_no_rompe()
     print("\n=== TODOS LOS TESTS PASADOS ===\n")

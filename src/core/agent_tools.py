@@ -42,27 +42,29 @@ def parse_tool_calls(text: str) -> tuple[str, list]:
         clean_text = clean_text.replace(match.group(0), aviso)
 
     # ── CAPA 2: Fallback para JSON sin fences (cuando el LLM omite las marcas) ──
-    # Solo se activa si la capa anterior no encontró ninguna tool
     if not tools_to_run:
-        # Buscar objetos JSON sueltos que empiecen por { y contengan "action"
-        raw_json_pattern = r'(\{[\s\S]*?"action"\s*:\s*"(?:create_file|edit_file|search_web|open_converter)"[\s\S]*?\})\s*$'
-        raw_match = re.search(raw_json_pattern, text)
-        if raw_match:
-            raw_block = raw_match.group(1).strip()
-            data = _robust_parse(raw_block)
-            if data:
-                action = data.get("action")
-                if action in ("create_file", "edit_file", "search_web", "open_converter"):
-                    data.pop("_recovered", None)
-                    tools_to_run.append(data)
-                    if action == "search_web":
-                        aviso = f"\n> 🌐 **Búsqueda Web Solicitada:** `{data.get('query', '')}`\n"
-                    else:
-                        aviso = (
-                            f"\n> 🛠️ **Herramienta Ejecutada:** "
-                            f"`{action}` en `{data.get('filename', 'archivo')}`\n"
-                        )
-                    clean_text = clean_text.replace(raw_match.group(0), aviso)
+        # Intentamos extraer lo que haya entre la primera { y la última } que contenga una action válida
+        first_brace = text.find('{')
+        last_brace = text.rfind('}')
+        
+        if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+            raw_block = text[first_brace:last_brace+1]
+            # Verificamos que parezca una tool antes de intentar el parseo pesado
+            if '"action"' in raw_block and any(a in raw_block for a in ("create_file", "edit_file", "search_web", "open_converter")):
+                data = _robust_parse(raw_block)
+                if data:
+                    action = data.get("action")
+                    if action in ("create_file", "edit_file", "search_web", "open_converter"):
+                        data.pop("_recovered", None)
+                        tools_to_run.append(data)
+                        if action == "search_web":
+                            aviso = f"\n> 🌐 **Búsqueda Web Solicitada:** `{data.get('query', '')}`\n"
+                        else:
+                            aviso = (
+                                f"\n> 🛠️ **Herramienta Ejecutada:** "
+                                f"`{action}` en `{data.get('filename', 'archivo')}`\n"
+                            )
+                        clean_text = clean_text.replace(raw_block, aviso)
 
     return clean_text, tools_to_run
 
