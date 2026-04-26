@@ -7,22 +7,22 @@ from google.genai import types
 from groq import Groq
 
 from src.core.config import (
-    CLAVE_GEMINI, CLAVE_GROQ, CLAVE_OPENROUTER, CARPETA_IMAGENES, INSTRUCCIONES_SISTEMA
+    CLAVE_GEMINI, CLAVE_GROQ, CLAVE_OPENROUTER, CARPETA_IMAGENES, PROMPT_TECH_LEAD
 )
 from openai import OpenAI
 
 class LLMProvider:
     """Clase base (Wrapper) para proveedores de modelos de lenguaje."""
-    def stream_chat(self, mensaje: str, historial: list):
+    def stream_chat(self, mensaje: str, historial: list, system_instruction: str = None):
         raise NotImplementedError
 
 class GeminiProvider(LLMProvider):
-    def stream_chat(self, carga_util, historial=None):
+    def stream_chat(self, carga_util, historial=None, system_instruction: str = None):
         try:
             cliente = ggenai.Client(api_key=CLAVE_GEMINI)
             model_name = 'gemini-2.5-pro'
             config = types.GenerateContentConfig(
-                system_instruction=INSTRUCCIONES_SISTEMA, 
+                system_instruction=system_instruction or PROMPT_TECH_LEAD, 
                 temperature=0.7,
                 max_output_tokens=8192
             )
@@ -69,10 +69,10 @@ class GroqProvider(LLMProvider):
     def __init__(self, model="llama-3.3-70b-versatile"):
         self.model = model
 
-    def stream_chat(self, mensaje: str, historial: list):
+    def stream_chat(self, mensaje: str, historial: list, system_instruction: str = None):
         try:
             cliente = Groq(api_key=CLAVE_GROQ)
-            mensajes = [{"role": "system", "content": INSTRUCCIONES_SISTEMA}]
+            mensajes = [{"role": "system", "content": system_instruction or PROMPT_TECH_LEAD}]
             for m in historial: 
                 if m.get("content"):
                     mensajes.append({"role": m["role"], "content": m["content"]})
@@ -90,9 +90,9 @@ class GroqProvider(LLMProvider):
             yield f"❌ Error Groq: {e}"
 
 class OllamaProvider(LLMProvider):
-    def stream_chat(self, mensaje: str, historial: list):
+    def stream_chat(self, mensaje: str, historial: list, system_instruction: str = None):
         url = "http://localhost:11434/api/chat"
-        mensajes = [{"role": "system", "content": INSTRUCCIONES_SISTEMA}]
+        mensajes = [{"role": "system", "content": system_instruction or PROMPT_TECH_LEAD}]
         for m in historial:
             if m.get("content"):
                 mensajes.append({"role": m["role"], "content": m["content"]})
@@ -105,7 +105,7 @@ class OllamaProvider(LLMProvider):
             yield f"❌ Error Ollama: {e}"
 
 class OpenRouterProvider(LLMProvider):
-    def stream_chat(self, mensaje: str, historial: list):
+    def stream_chat(self, mensaje: str, historial: list, system_instruction: str = None):
         try:
             import os
             from dotenv import load_dotenv
@@ -120,7 +120,7 @@ class OpenRouterProvider(LLMProvider):
                 api_key=clave_actual,
                 base_url="https://openrouter.ai/api/v1",
             )
-            mensajes = [{"role": "system", "content": INSTRUCCIONES_SISTEMA}]
+            mensajes = [{"role": "system", "content": system_instruction or PROMPT_TECH_LEAD}]
             for m in historial: 
                 if m.get("content"):
                     mensajes.append({"role": m["role"], "content": m["content"]})

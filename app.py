@@ -10,10 +10,26 @@ from PIL import Image
 import datetime
 
 from src.core.config import (
-    PAGE_TITLE, PAGE_ICON, LAYOUT, 
-    CLAVE_GEMINI, CLAVE_GROQ, CARPETA_IMAGENES, 
-    INSTRUCCIONES_SISTEMA, ESTILOS_CSS
+    PAGE_TITLE, PAGE_ICON, LAYOUT,
+    CLAVE_GEMINI, CLAVE_GROQ, CARPETA_IMAGENES,
+    PROMPT_TECH_LEAD, PROMPT_APP_BUILDER, PROMPT_UI_DESIGNER, ESTILOS_CSS
 )
+
+# Mapa de Roles → Prompts y motores bloqueados
+ROLES = {
+    "🧠 Asistente General (Tech Lead)": {
+        "prompt": PROMPT_TECH_LEAD,
+        "motor_forzado": None,  # El usuario elige libremente
+    },
+    "🏗️ Arquitecto de Software (App Builder)": {
+        "prompt": PROMPT_APP_BUILDER,
+        "motor_forzado": "Groq Llama 3.3 (Lead Software Engineer / Creador)",
+    },
+    "🎨 Diseñador Frontend UI/UX (Vision)": {
+        "prompt": PROMPT_UI_DESIGNER,
+        "motor_forzado": "Gemini 3.1 Pro (Análisis Multimedia y Arte)",
+    },
+}
 from src.core.intent_parser import parse_intent
 from src.core.ui_helpers import render_download_button
 from src.services.memory_service import cargar_memoria, guardar_memoria, limpiar_memoria
@@ -58,6 +74,30 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 if "messages" not in st.session_state: st.session_state.messages = cargar_memoria()
+if "rol_activo" not in st.session_state: st.session_state.rol_activo = "Asistente General (Tech Lead)"
+
+def cambiar_rol():
+    nuevo_rol = st.session_state.selector_rol
+    if nuevo_rol != st.session_state.rol_activo:
+        from src.services.llm_provider import GroqProvider
+        provider = GroqProvider()
+        historial_texto = "\n".join([f"{m['role']}: {m.get('content', '')}" for m in st.session_state.messages])
+        
+        if len(historial_texto.strip()) > 10:
+            prompt_resumen = f"Resume este historial de chat en un solo párrafo conciso para darle contexto al siguiente agente de IA sobre qué está construyendo o discutiendo el usuario. Historial:\\n{historial_texto}"
+            try:
+                resumen_chunks = list(provider.stream_chat(prompt_resumen, []))
+                resumen = "".join(resumen_chunks)
+            except:
+                resumen = "El usuario cambió de rol."
+                
+            st.session_state.messages = []
+            st.session_state.messages.append({"role": "user", "content": f"*(Contexto transferido del rol anterior):* {resumen}"})
+        else:
+            st.session_state.messages = []
+            
+        guardar_memoria(st.session_state.messages)
+        st.session_state.rol_activo = nuevo_rol
 
 # ------------------ PANEL DE CONVERSIÓN (DIALOG) ------------------
 from src.services.converter_service import run_conversion
@@ -128,39 +168,69 @@ def recomendar_motor():
 # ------------------------------------------
 
 with st.sidebar:
-    st.header("👨‍💻 Asistente Tech Lead")
-    st.selectbox(
-        "¿Cuál es tu objetivo principal?",
-        [
-            "💡 Selecciona un objetivo...",
-            "🎨 Generar una Imagen / Arte visual",
-            "🎥 Analizar un Vídeo o Imagen (Gemini)",
-            "💻 Desarrollar Software o Escribir Código",
-            "📄 Generar un Documento (PDF, Excel, Word)",
-            "🔒 Tarea Privada/Sensible (Local)"
-        ],
-        key="tarea_selector",
-        on_change=recomendar_motor
+    # ── SELECTOR DE ROL (Perfiles Dinámicos) ──────────────────────
+    st.header("🎭 Rol del Agente")
+    rol_seleccionado = st.selectbox(
+        "Modo de operación:",
+        list(ROLES.keys()),
+        key="selector_rol",
+        on_change=cambiar_rol
     )
-    
-    if st.session_state.tech_lead_msg:
-        st.success(st.session_state.tech_lead_msg)
-        
+    rol_config = ROLES[rol_seleccionado]
+    system_instruction_activo = rol_config["prompt"]
+    motor_forzado = rol_config["motor_forzado"]
+
+    # Badge informativo del rol activo
+    if "App Builder" in rol_seleccionado:
+        st.info("🏗️ Motor: **Groq** (Velocidad máx.) — Bloqueado para este rol.")
+    elif "UI/UX" in rol_seleccionado:
+        st.info("🎨 Motor: **Gemini Vision** (Multimodal) — Bloqueado para este rol.")
+    else:
+        st.caption("Motor libre — selecciona abajo.")
+
     st.divider()
+    # ── TECH LEAD ROUTER ─────────────────────────────────────────
+    if "Tech Lead" in rol_seleccionado:
+        st.header("👨‍💻 Enrutador Inteligente")
+        st.selectbox(
+            "¿Cuál es tu objetivo principal?",
+            [
+                "💡 Selecciona un objetivo...",
+                "🎨 Generar una Imagen / Arte visual",
+                "🎥 Analizar un Vídeo o Imagen (Gemini)",
+                "💻 Desarrollar Software o Escribir Código",
+                "📄 Generar un Documento (PDF, Excel, Word)",
+                "🔒 Tarea Privada/Sensible (Local)"
+            ],
+            key="tarea_selector",
+            on_change=recomendar_motor
+        )
+        if st.session_state.tech_lead_msg:
+            st.success(st.session_state.tech_lead_msg)
+        st.divider()
+
+    # ── CONVERSOR ─────────────────────────────────────────────────
     if st.button("🔄 Abrir Estudio de Conversión", use_container_width=True):
         st.session_state["suggested_format"] = ""
         panel_conversor()
-        
+
+    # ── MOTOR ACTIVO ──────────────────────────────────────────────
     st.header("⚙️ Configuración Manual")
-    motor = st.selectbox("Cerebro Activo:", [
-        "Groq Llama 3.3 (Lead Software Engineer / Creador)", 
-        "Gemini 3.1 Pro (Análisis Multimedia y Arte)", 
+    motores_disponibles = [
+        "Groq Llama 3.3 (Lead Software Engineer / Creador)",
+        "Gemini 3.1 Pro (Análisis Multimedia y Arte)",
         "Ollama Qwen (Desarrollo Local Zero-Trust)"
-    ], index=st.session_state.motor_activo_idx, key="motor_manual_selector")
-    
+    ]
+    if motor_forzado:
+        motor = motor_forzado
+        st.selectbox("Cerebro Activo:", [motor_forzado], index=0, disabled=True, key="motor_manual_selector")
+    else:
+        motor = st.selectbox("Cerebro Activo:", motores_disponibles,
+                             index=st.session_state.motor_activo_idx, key="motor_manual_selector")
+
     st.info("💡 Pídele de forma natural que cree imágenes. Ej: *'Genera una imagen de un logo...'*")
     st.divider()
-    archivo = st.file_uploader("📁 Adjuntar Documento, Imagen o Vídeo", 
+    archivo = st.file_uploader("📁 Adjuntar Documento, Imagen o Vídeo",
                               type=['py','js','txt','pdf','docx','odt','xlsx','xls','ods','csv','pptx','odp','png','jpg','jpeg','mp4','mov','avi'])
     if st.button("🗑️ Borrar Memoria Completa", use_container_width=True):
         st.session_state.messages = []
@@ -279,13 +349,13 @@ if prompt := st.chat_input("Escribe tu consulta o pídele que genere una imagen.
                 iteracion += 1
                 full_res = ""
                 
-                # Ejecutar el stream
+                # Ejecutar el stream con el prompt del rol activo
                 if "Gemini" in motor:
-                    gen = provider.stream_chat(carga_util, st.session_state.messages[:-1])
+                    gen = provider.stream_chat(carga_util, st.session_state.messages[:-1], system_instruction=system_instruction_activo)
                 elif "Groq" in motor:
-                    gen = provider.stream_chat(prompt_final, st.session_state.messages[:-1])
+                    gen = provider.stream_chat(prompt_final, st.session_state.messages[:-1], system_instruction=system_instruction_activo)
                 else:
-                    gen = provider.stream_chat(prompt_final, st.session_state.messages[:-1])
+                    gen = provider.stream_chat(prompt_final, st.session_state.messages[:-1], system_instruction=system_instruction_activo)
                     
                 for chunk in gen:
                     full_res += chunk
@@ -300,9 +370,9 @@ if prompt := st.chat_input("Escribe tu consulta o pídele que genere una imagen.
                     provider = GeminiProvider()
                     carga_util = [prompt_final]
                     if imagen_adjunta: carga_util.append(imagen_adjunta)
-                    # Reiniciar generación
+                    # Reiniciar generación con el mismo system_instruction del rol
                     full_res = ""
-                    gen = provider.stream_chat(carga_util, st.session_state.messages[:-1])
+                    gen = provider.stream_chat(carga_util, st.session_state.messages[:-1], system_instruction=system_instruction_activo)
                     for chunk in gen:
                         full_res += chunk
                         res_placeholder.markdown(full_res + "▌")
