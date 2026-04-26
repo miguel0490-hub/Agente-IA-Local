@@ -137,36 +137,34 @@ def _manual_extract(json_str: str) -> dict | None:
     lo que hay entre la apertura de su string y el último '\"' antes del
     cierre del objeto JSON. Funciona con HTML que tiene {}, comillas, etc.
     """
-    action_m   = re.search(r'"action"\s*:\s*"([^"]+)"',   json_str)
-    filename_m = re.search(r'"filename"\s*:\s*"([^"]+)"', json_str)
+    # Regex ultra-flexibles para capturar action y filename (soportan ' o " y espacios)
+    action_m   = re.search(r'["\']action["\']\s*:\s*["\']([^"\']+)["\']',   json_str)
+    filename_m = re.search(r'["\']filename["\']\s*:\s*["\']([^"\']+)["\']', json_str)
 
     if not action_m or not filename_m:
         return None
 
-    # Localizar el inicio del valor de "content"
-    content_key_pos = json_str.find('"content"')
-    if content_key_pos == -1:
+    action = action_m.group(1).strip()
+    filename = filename_m.group(1).strip()
+
+    # Localizar el inicio del valor de "content" (soportando 'content' o "content")
+    content_key_m = re.search(r'["\']content["\']\s*:\s*(["\'])', json_str)
+    if not content_key_m:
         return None
 
-    after_key   = json_str[content_key_pos + len('"content"'):]
-    colon_idx   = after_key.find(":")
-    if colon_idx == -1:
-        return None
-
-    after_colon = after_key[colon_idx + 1:].lstrip()
-    if not after_colon.startswith('"'):
-        return None
-
-    # El contenido empieza tras la primera comilla
-    inner = after_colon[1:]
+    # El contenido empieza tras la comilla de apertura detectada
+    quote_char = content_key_m.group(1)
+    content_start_pos = content_key_m.end()
+    inner = json_str[content_start_pos:]
     
     # BUSQUEDA ROBUSTA DE LA COMILLA DE CIERRE:
-    # Buscamos la última comilla que esté seguida opcionalmente de espacios y luego un } o un ,
-    # Esto evita que comillas internas del HTML (si el LLM no las escapó) rompan la extracción.
-    content_match = re.search(r'([\s\S]*?)"\s*[},]', inner)
+    # Buscamos el char de comilla que va seguido opcionalmente de espacios y luego un } o un ,
+    # Usamos f-string para inyectar el caracter de comilla detectado (quote_char)
+    content_match = re.search(rf'([\s\S]*?){quote_char}\s*[}},]', inner)
+    
     if not content_match:
         # Fallback: última comilla del bloque
-        last_quote = inner.rfind('"')
+        last_quote = inner.rfind(quote_char)
         if last_quote == -1: return None
         raw_content = inner[:last_quote]
     else:
@@ -183,8 +181,8 @@ def _manual_extract(json_str: str) -> dict | None:
     )
 
     return {
-        "action":     action_m.group(1),
-        "filename":   filename_m.group(1),
+        "action":     action,
+        "filename":   filename,
         "content":    unescaped,
         "_recovered": True,
     }
