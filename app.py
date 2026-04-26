@@ -27,7 +27,7 @@ ROLES = {
     },
     "🎨 Diseñador Frontend UI/UX (Vision)": {
         "prompt": PROMPT_UI_DESIGNER,
-        "motor_forzado": "Gemini 3.1 Pro (Análisis Multimedia y Arte)",
+        "motor_forzado": "Gemini 2.5 Pro (Análisis Multimedia y Arte)",
     },
 }
 from src.core.intent_parser import parse_intent
@@ -147,11 +147,11 @@ def recomendar_motor():
     tarea = st.session_state.tarea_selector
     if "Arte visual" in tarea or "Analizar" in tarea:
         st.session_state.motor_activo_idx = 1
-        st.session_state.motor_manual_selector = "Gemini 3.1 Pro (Análisis Multimedia y Arte)"
+        st.session_state.motor_manual_selector = "Gemini 2.5 Pro (Análisis Multimedia y Arte)"
         if "Arte" in tarea:
-            st.session_state.tech_lead_msg = "He asignado a **Gemini 3.1 Pro** porque tiene un motor de difusión nativo insuperable para generar arte visual."
+            st.session_state.tech_lead_msg = "He asignado a **Gemini 2.5 Pro** porque tiene un motor de difusión nativo insuperable para generar arte visual."
         else:
-            st.session_state.tech_lead_msg = "He asignado a **Gemini 3.1 Pro**. Su API nativa soporta la carga de vídeos enteros para analizarlos frame a frame."
+            st.session_state.tech_lead_msg = "He asignado a **Gemini 2.5 Pro**. Su API nativa soporta la carga de vídeos enteros para analizarlos frame a frame."
     elif "Software" in tarea or "Documento" in tarea:
         st.session_state.motor_activo_idx = 0
         st.session_state.motor_manual_selector = "Groq Llama 3.3 (Lead Software Engineer / Creador)"
@@ -218,7 +218,7 @@ with st.sidebar:
     st.header("⚙️ Configuración Manual")
     motores_disponibles = [
         "Groq Llama 3.3 (Lead Software Engineer / Creador)",
-        "Gemini 3.1 Pro (Análisis Multimedia y Arte)",
+        "Gemini 2.5 Pro (Análisis Multimedia y Arte)",
         "Ollama Qwen (Desarrollo Local Zero-Trust)"
     ]
     if motor_forzado:

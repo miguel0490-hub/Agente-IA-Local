@@ -23,7 +23,7 @@ def test_groq():
         return False
 
 def test_gemini_text():
-    print("\n--- Probando Gemini 3.1 Pro (Texto) ---")
+    print("\n--- Probando Gemini 2.5 Pro (Texto) ---")
     try:
         provider = GeminiProvider()
         response_chunks = list(provider.stream_chat(["Hola, responde solo con la palabra 'GEMINI_OK'."], []))
