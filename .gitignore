@@ -9,3 +9,9 @@ __pycache__/
 # Imágenes o iconos
 *.jpg
 *.ico
+
+# Outputs del Agente y configuración local
+.streamlit/
+generated_images/
+historial_chat.json
+test_output.pdf
