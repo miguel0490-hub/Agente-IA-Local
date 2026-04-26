@@ -358,8 +358,9 @@ if prompt := st.chat_input("Escribe tu consulta o pídele que genere una imagen.
                     gen = provider.stream_chat(prompt_final, st.session_state.messages[:-1], system_instruction=system_instruction_activo)
                     
                 for chunk in gen:
-                    full_res += chunk
-                    res_placeholder.markdown(full_res + "▌")
+                    if chunk:  # Guarda contra None de Gemini Vision u otros proveedores
+                        full_res += chunk
+                        res_placeholder.markdown(full_res + "▌")
                     
                 # [NUEVO] Failover System para Groq (Rate Limit 429)
                 if ("rate_limit" in full_res.lower() or "429" in full_res) and "Groq" in motor:
@@ -374,8 +375,9 @@ if prompt := st.chat_input("Escribe tu consulta o pídele que genere una imagen.
                     full_res = ""
                     gen = provider.stream_chat(carga_util, st.session_state.messages[:-1], system_instruction=system_instruction_activo)
                     for chunk in gen:
-                        full_res += chunk
-                        res_placeholder.markdown(full_res + "▌")
+                        if chunk:  # Guarda contra None en el Failover
+                            full_res += chunk
+                            res_placeholder.markdown(full_res + "▌")
                         
                 # Post-procesamiento
                 from src.core.agent_tools import parse_tool_calls

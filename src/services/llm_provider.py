@@ -28,7 +28,9 @@ class GeminiProvider(LLMProvider):
             )
             chat = cliente.chats.create(model=model_name, config=config)
             for frag in chat.send_message_stream(carga_util):
-                yield frag.text
+                # Gemini Vision puede emitir fragmentos con text=None durante el procesamiento
+                if frag.text is not None:
+                    yield frag.text
         except Exception as e: 
             yield f"❌ Error Gemini Texto: {e}"
             
