@@ -88,6 +88,9 @@ def cambiar_rol():
             try:
                 resumen_chunks = list(provider.stream_chat(prompt_resumen, []))
                 resumen = "".join(resumen_chunks)
+                # Si el resumen contiene un error de API, lo descartamos
+                if "❌ Error" in resumen or "429" in resumen or "rate_limit" in resumen:
+                    resumen = "El usuario cambió de rol para continuar el proyecto."
             except:
                 resumen = "El usuario cambió de rol."
                 

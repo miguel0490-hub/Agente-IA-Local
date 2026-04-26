@@ -60,6 +60,20 @@ def test_raw_json_con_texto_alrededor():
     assert "🛠️ **Herramienta Ejecutada:**" in clean
     print("[OK] test_raw_json_con_texto_alrededor: PASADO")
 
+def test_json_con_comillas_internas_no_escapadas():
+    """
+    Verifica que el extractor manual captura el contenido incluso si el LLM
+    mete comillas dobles sin escapar dentro del HTML.
+    """
+    respuesta_llm = (
+        '{"action": "create_file", "filename": "ui.html", '
+        '"content": "<html><div class="test">Texto</div></html>" }'
+    )
+    clean, tools = parse_tool_calls(respuesta_llm)
+    assert len(tools) == 1, "Debería haber detectado la tool a pesar de las comillas internas"
+    assert 'class="test"' in tools[0]["content"]
+    print("[OK] test_json_con_comillas_internas_no_escapadas: PASADO")
+
 def test_respuesta_vacia_no_rompe():
     """Una respuesta sin bloques JSON debe devolver texto limpio y lista vacia."""
     respuesta_llm = "Hola! Soy el SuperAgente, encantado de ayudarte."
@@ -73,5 +87,6 @@ if __name__ == "__main__":
     test_html_con_src_no_rompe_parser()
     test_json_sin_action_no_rompe_parser()
     test_raw_json_con_texto_alrededor()
+    test_json_con_comillas_internas_no_escapadas()
     test_respuesta_vacia_no_rompe()
     print("\n=== TODOS LOS TESTS PASADOS ===\n")

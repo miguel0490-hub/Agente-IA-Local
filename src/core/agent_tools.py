@@ -157,13 +157,20 @@ def _manual_extract(json_str: str) -> dict | None:
     if not after_colon.startswith('"'):
         return None
 
-    # El contenido está entre la primera " y la última " del bloque
+    # El contenido empieza tras la primera comilla
     inner = after_colon[1:]
-    last_quote = inner.rfind('"')
-    if last_quote == -1:
-        return None
-
-    raw_content = inner[:last_quote]
+    
+    # BUSQUEDA ROBUSTA DE LA COMILLA DE CIERRE:
+    # Buscamos la última comilla que esté seguida opcionalmente de espacios y luego un } o un ,
+    # Esto evita que comillas internas del HTML (si el LLM no las escapó) rompan la extracción.
+    content_match = re.search(r'([\s\S]*?)"\s*[},]', inner)
+    if not content_match:
+        # Fallback: última comilla del bloque
+        last_quote = inner.rfind('"')
+        if last_quote == -1: return None
+        raw_content = inner[:last_quote]
+    else:
+        raw_content = content_match.group(1)
 
     # Desescapar secuencias JSON estándar
     unescaped = (
