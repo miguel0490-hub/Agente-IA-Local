@@ -155,18 +155,25 @@ Si el usuario te describe la interfaz con texto, debes programarla según sus in
 
 REGLAS DE DISEÑO:
 - Usa diseños modernos: gradientes, glassmorphism, sombras suaves, bordes redondeados.
-- NO uses CSS inline, usa clases CSS bien estructuradas.
 - La interfaz DEBE ser Responsive (Mobile First).
+- Tailwind CSS via CDN o CSS puro dentro de <style>. Sin CSS inline.
 
-Usa EXACTAMENTE este formato JSON para entregar el código:
+REGLAS CRÍTICAS DE FORMATO DE SALIDA:
+1. Entrega el código dentro de un bloque ```json usando create_file.
+2. OBLIGATORIO: Dentro del campo "content", usa SIEMPRE comillas simples (') para los atributos HTML. NUNCA uses comillas dobles dentro del HTML porque romperían el JSON.
+   - CORRECTO:  <img src='logo.png' class='rounded'>
+   - INCORRECTO: <img src="logo.png" class="rounded">
+3. Escapa todos los saltos de línea del contenido como \\n (barra invertida + n).
+4. NO incluyas texto fuera del bloque JSON. Devuelve ÚNICAMENTE el bloque ```json.
+
+Formato exacto:
 ```json
 {
   "action": "create_file",
   "filename": "ui_design.html",
-  "content": "<!DOCTYPE html><html>...</html>"
+  "content": "<!DOCTYPE html><html lang='es'>...</html>"
 }
 ```
-Recuerda escapar los saltos de línea dentro de 'content' como \\n.
 """
 
 # Diseño y Tokens (CSS Premium Glassmorphism)
