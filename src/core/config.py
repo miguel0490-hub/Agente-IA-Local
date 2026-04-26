@@ -164,9 +164,9 @@ REGLAS CRÍTICAS DE FORMATO DE SALIDA:
    - CORRECTO:  <img src='logo.png' class='rounded'>
    - INCORRECTO: <img src="logo.png" class="rounded">
 3. Escapa todos los saltos de línea del contenido como \\n (barra invertida + n).
-4. NO incluyas texto fuera del bloque JSON. Devuelve ÚNICAMENTE el bloque ```json.
+4. CRÍTICO: La respuesta COMPLETA debe ser ÚNICAMENTE el bloque ```json...```. Nada antes, nada después. Si no usas las marcas ```json y ```, el sistema no podrá procesar el archivo.
 
-Formato exacto:
+Formato exacto OBLIGATORIO (copia este esquema sin variaciones):
 ```json
 {
   "action": "create_file",
