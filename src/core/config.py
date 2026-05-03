@@ -433,5 +433,53 @@ ESTILOS_CSS = f"""
         visibility: visible !important;
         display: block !important;
     }}
+
+    /* ── Capas de Flotación (Z-Index Fixes) ────────────────────────── */
+    div[data-testid="stDialog"] {{
+        z-index: 99999 !important;
+    }}
+    div[data-testid="stNotification"] {{
+        z-index: 999999 !important;
+    }}
+    .stApp > header {{
+        z-index: 9999 !important;
+    }}
+
+    /* ── Optimización Mobile (<768px) ──────────────────────────────── */
+    @media (max-width: 768px) {{
+        .stApp {{
+            max-width: 100vw !important;
+            overflow-x: hidden !important;
+        }}
+        
+        /* Forzar max-width en contenedores de chat */
+        .stChatMessage {{
+            max-width: 100% !important;
+            padding: 1rem !important;
+            margin-bottom: 1rem !important;
+        }}
+        
+        /* Ajuste de scroll seguro en barra lateral sin romper móviles */
+        [data-testid="stSidebar"] {{
+            max-width: 100% !important;
+            width: 100% !important;
+        }}
+        
+        [data-testid="stSidebar"] > div:first-child {{
+            height: 100% !important;
+            max-height: 100vh !important;
+        }}
+        
+        /* Reducir márgenes globales */
+        .block-container {{
+            padding-left: 1rem !important;
+            padding-right: 1rem !important;
+        }}
+        
+        /* Achicar título principal en móviles */
+        h1 {{
+            font-size: 2.2rem !important;
+        }}
+    }}
 </style>
 """
