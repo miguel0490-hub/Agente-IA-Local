@@ -434,6 +434,16 @@ ESTILOS_CSS = f"""
         display: block !important;
     }}
 
+    /* ── Contenedor Principal (Scroll Anti-Bloqueo) ────────────────── */
+    .block-container {{
+        padding-bottom: 130px !important;
+    }}
+
+    /* ── Ajuste Barra Lateral ──────────────────────────────────────── */
+    [data-testid="stSidebar"] .danger-btn {{
+        margin-bottom: 30px !important;
+    }}
+
     /* ── Capas de Flotación (Z-Index Fixes) ────────────────────────── */
     div[data-testid="stDialog"] {{
         z-index: 99999 !important;
@@ -452,11 +462,25 @@ ESTILOS_CSS = f"""
             overflow-x: hidden !important;
         }}
         
-        /* Forzar max-width en contenedores de chat */
+        /* Forzar max-width en contenedores de chat y reducir bordes/neon */
         .stChatMessage {{
             max-width: 100% !important;
-            padding: 1rem !important;
-            margin-bottom: 1rem !important;
+            padding: 15px !important;
+            margin-bottom: 15px !important;
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.3) !important;
+            border-width: 1px !important;
+            border-color: rgba(255, 255, 255, 0.1) !important;
+        }}
+        
+        /* Reducir neon en Chat Input */
+        [data-testid="stChatInput"] {{
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5) !important;
+            padding: 5px 10px !important;
+            border-width: 1px !important;
+            border-color: rgba(255, 255, 255, 0.1) !important;
+        }}
+        [data-testid="stChatInput"]:focus-within {{
+            box-shadow: 0 0 8px rgba(0, 242, 254, 0.3), 0 5px 15px rgba(0,0,0,0.5) !important;
         }}
         
         /* Ajuste de scroll seguro en barra lateral sin romper móviles */
@@ -468,17 +492,19 @@ ESTILOS_CSS = f"""
         [data-testid="stSidebar"] > div:first-child {{
             height: 100% !important;
             max-height: 100vh !important;
+            padding-bottom: 50px !important;
         }}
         
         /* Reducir márgenes globales */
         .block-container {{
-            padding-left: 1rem !important;
-            padding-right: 1rem !important;
+            padding-left: 15px !important;
+            padding-right: 15px !important;
+            padding-bottom: 130px !important;
         }}
         
         /* Achicar título principal en móviles */
         h1 {{
-            font-size: 2.2rem !important;
+            font-size: 2rem !important;
         }}
     }}
 </style>
