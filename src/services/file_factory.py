@@ -4,36 +4,7 @@ import io
 import datetime
 from src.core.config import CARPETA_IMAGENES
 
-# Intentar cargar librerías opcionales (instaladas en Fase 1)
-try:
-    from reportlab.lib.pagesizes import letter
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-    from reportlab.lib.styles import getSampleStyleSheet
-    HAS_REPORTLAB = True
-except ImportError:
-    HAS_REPORTLAB = False
-
-try:
-    import pandas as pd
-    HAS_PANDAS = True
-except ImportError:
-    HAS_PANDAS = False
-
-try:
-    import pdfkit
-    # Ruta explícita al binario instalado por winget en Windows.
-    # Esto elimina la dependencia del PATH del sistema y garantiza el funcionamiento
-    # en sesiones donde el PATH aún no se ha recargado tras la instalación.
-    WKHTMLTOPDF_PATH = r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe"
-    if os.path.exists(WKHTMLTOPDF_PATH):
-        PDFKIT_CONFIG = pdfkit.configuration(wkhtmltopdf=WKHTMLTOPDF_PATH)
-    else:
-        PDFKIT_CONFIG = None  # pdfkit intentará encontrarlo en el PATH
-    HAS_PDFKIT = True
-except ImportError:
-    HAS_PDFKIT = False
-    PDFKIT_CONFIG = None
-
+# Imports pesados movidos al interior de los métodos para Lazy Loading
 
 class FileFactory:
     """Fábrica de archivos multiformato invocable por el LLM."""
@@ -109,6 +80,17 @@ class FileFactory:
 
         # ── Rama 1 & 2: Contenido HTML ───────────────────────────────────────
         if content_is_html:
+            HAS_PDFKIT = False
+            PDFKIT_CONFIG = None
+            try:
+                import pdfkit
+                WKHTMLTOPDF_PATH = os.getenv("WKHTMLTOPDF_PATH", r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe")
+                if WKHTMLTOPDF_PATH and os.path.exists(WKHTMLTOPDF_PATH):
+                    PDFKIT_CONFIG = pdfkit.configuration(wkhtmltopdf=WKHTMLTOPDF_PATH)
+                HAS_PDFKIT = True
+            except ImportError:
+                pass
+
             if HAS_PDFKIT:
                 # Estrategia: escribir el HTML a un fichero temporal y convertir desde
                 # disco con from_file(). Esto elimina todos los problemas de encoding
@@ -159,6 +141,14 @@ class FileFactory:
             return self._create_text(html_filepath, content)
 
         # ── Rama 3: Contenido Markdown → ReportLab ───────────────────────────
+        try:
+            from reportlab.lib.pagesizes import letter
+            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+            from reportlab.lib.styles import getSampleStyleSheet
+            HAS_REPORTLAB = True
+        except ImportError:
+            HAS_REPORTLAB = False
+
         if HAS_REPORTLAB:
             try:
                 doc = SimpleDocTemplate(filepath, pagesize=letter)
@@ -183,6 +173,12 @@ class FileFactory:
         return self._create_text(md_filepath, content)
 
     def _create_excel(self, filepath, content):
+        try:
+            import pandas as pd
+            HAS_PANDAS = True
+        except ImportError:
+            HAS_PANDAS = False
+
         if not HAS_PANDAS:
             filepath = filepath.replace('.xlsx', '.csv')
             return self._create_text(filepath, content)

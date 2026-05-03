@@ -4,8 +4,39 @@ import sys
 
 import json
 import requests
-from src.services.llm_provider import GeminiProvider, GroqProvider, OllamaProvider
 from dotenv import load_dotenv
+
+@st.cache_resource
+def get_gemini_provider():
+    from src.services.llm_provider import GeminiProvider
+    return GeminiProvider()
+
+@st.cache_resource
+def get_groq_provider():
+    from src.services.llm_provider import GroqProvider
+    return GroqProvider()
+
+@st.cache_resource
+def get_ollama_provider():
+    from src.services.llm_provider import OllamaProvider
+    return OllamaProvider()
+
+@st.cache_resource
+def get_groq_whisper_provider():
+    from src.services.llm_provider import GroqWhisperProvider
+    return GroqWhisperProvider()
+
+@st.cache_resource
+def get_openai_tts_provider(voice="alloy"):
+    from src.services.llm_provider import OpenAITTSProvider
+    return OpenAITTSProvider(voice=voice)
+
+@st.cache_resource
+def get_edge_tts_provider(voice):
+    from src.services.llm_provider import EdgeTTSProvider
+    return EdgeTTSProvider(voice=voice)
+
+
 from PIL import Image
 import datetime
 
@@ -79,16 +110,15 @@ if "rol_activo" not in st.session_state: st.session_state.rol_activo = "Asistent
 def cambiar_rol():
     nuevo_rol = st.session_state.selector_rol
     if nuevo_rol != st.session_state.rol_activo:
-        from src.services.llm_provider import GroqProvider
-        provider = GroqProvider()
+        provider = get_groq_provider()
         historial_texto = "\n".join([f"{m['role']}: {m.get('content', '')}" for m in st.session_state.messages])
         
-        if len(historial_texto.strip()) > 10:
-            prompt_resumen = f"Resume este historial de chat en un solo párrafo conciso para darle contexto al siguiente agente de IA sobre qué está construyendo o discutiendo el usuario. Historial:\\n{historial_texto}"
+        # B-001 Fix: Always transfer context or at least a restart notification
+        if len(historial_texto.strip()) > 0:
+            prompt_resumen = f"Resume este historial de chat en un solo párrafo conciso para darle contexto al siguiente agente de IA sobre qué está construyendo o discutiendo el usuario. Historial:\n{historial_texto}"
             try:
                 resumen_chunks = list(provider.stream_chat(prompt_resumen, []))
                 resumen = "".join(resumen_chunks)
-                # Si el resumen contiene un error de API, lo descartamos
                 if "❌ Error" in resumen or "429" in resumen or "rate_limit" in resumen:
                     resumen = "El usuario cambió de rol para continuar el proyecto."
             except:
@@ -97,7 +127,14 @@ def cambiar_rol():
             st.session_state.messages = []
             st.session_state.messages.append({"role": "user", "content": f"*(Contexto transferido del rol anterior):* {resumen}"})
         else:
+            # Si no hay historial, simplemente limpiamos por seguridad
             st.session_state.messages = []
+            
+        # B-002 Fix: Sincronizar el motor activo en la sesión según el rol
+        if "App Builder" in nuevo_rol:
+            st.session_state.motor_activo_idx = 0 # Groq
+        elif "UI/UX" in nuevo_rol:
+            st.session_state.motor_activo_idx = 1 # Gemini
             
         guardar_memoria(st.session_state.messages)
         st.session_state.rol_activo = nuevo_rol
@@ -131,44 +168,32 @@ def panel_conversor():
                     exito = run_conversion(temp_input, temp_output)
                     
                     if exito:
+                        st.session_state.conv_result_path = temp_output
+                        st.session_state.conv_result_name = output_name
                         st.success("✅ ¡Conversión Exitosa!")
-                        with open(temp_output, "rb") as f:
-                            st.download_button(label=f"⬇️ Descargar {output_name}", data=f, file_name=output_name, use_container_width=True)
                     else:
                         st.error("❌ Falló la conversión. Asegúrate de tener FFmpeg / Pandoc instalados localmente.")
                     
                     if os.path.exists(temp_input):
                         os.remove(temp_input)
+
+    # Mostrar resultado de conversión persistente
+    if "conv_result_path" in st.session_state and st.session_state.conv_result_path:
+        with open(st.session_state.conv_result_path, "rb") as f:
+            st.download_button(
+                label=f"⬇️ Descargar {st.session_state.conv_result_name}",
+                data=f,
+                file_name=st.session_state.conv_result_name,
+                use_container_width=True,
+                key="btn_dl_conv"
+            )
 # ------------------------------------------------------------------
 
 
-# --- LÓGICA DE ENRUTAMIENTO (TECH LEAD) ---
-if "motor_activo_idx" not in st.session_state: st.session_state.motor_activo_idx = 0
-if "tech_lead_msg" not in st.session_state: st.session_state.tech_lead_msg = ""
+# ── ESTADO INICIAL DE SESIÓN ─────────────────────────────────────────
+if "motor_activo_idx" not in st.session_state:
+    st.session_state.motor_activo_idx = 0
 
-def recomendar_motor():
-    tarea = st.session_state.tarea_selector
-    if "Arte visual" in tarea or "Analizar" in tarea:
-        st.session_state.motor_activo_idx = 1
-        st.session_state.motor_manual_selector = "Gemini 2.5 Pro (Análisis Multimedia y Arte)"
-        if "Arte" in tarea:
-            st.session_state.tech_lead_msg = "He asignado a **Gemini 2.5 Pro** porque tiene un motor de difusión nativo insuperable para generar arte visual."
-        else:
-            st.session_state.tech_lead_msg = "He asignado a **Gemini 2.5 Pro**. Su API nativa soporta la carga de vídeos enteros para analizarlos frame a frame."
-    elif "Software" in tarea or "Documento" in tarea:
-        st.session_state.motor_activo_idx = 0
-        st.session_state.motor_manual_selector = "Groq Llama 3.3 (Lead Software Engineer / Creador)"
-        if "Software" in tarea:
-            st.session_state.tech_lead_msg = "He asignado a **Groq Llama 3.3**. Su velocidad y razonamiento lógico lo hacen el rey absoluto para picar código sin fallos."
-        else:
-            st.session_state.tech_lead_msg = "He asignado a **Groq Llama 3.3**. Es rapidísimo estructurando datos para crear archivos PDF o Excel."
-    elif "Privada" in tarea:
-        st.session_state.motor_activo_idx = 2
-        st.session_state.motor_manual_selector = "Ollama Qwen (Desarrollo Local Zero-Trust)"
-        st.session_state.tech_lead_msg = "He aislado el entorno hacia **Ollama Qwen**. Tu código e ideas no saldrán de esta máquina. (Zero-Trust)."
-    else:
-        st.session_state.tech_lead_msg = ""
-# ------------------------------------------
 
 with st.sidebar:
     # ── SELECTOR DE ROL (Perfiles Dinámicos) ──────────────────────
@@ -192,37 +217,16 @@ with st.sidebar:
         st.caption("Motor libre — selecciona abajo.")
 
     st.divider()
-    # ── TECH LEAD ROUTER ─────────────────────────────────────────
-    if "Tech Lead" in rol_seleccionado:
-        st.header("👨‍💻 Enrutador Inteligente")
-        st.selectbox(
-            "¿Cuál es tu objetivo principal?",
-            [
-                "💡 Selecciona un objetivo...",
-                "🎨 Generar una Imagen / Arte visual",
-                "🎥 Analizar un Vídeo o Imagen (Gemini)",
-                "💻 Desarrollar Software o Escribir Código",
-                "📄 Generar un Documento (PDF, Excel, Word)",
-                "🔒 Tarea Privada/Sensible (Local)"
-            ],
-            key="tarea_selector",
-            on_change=recomendar_motor
-        )
-        if st.session_state.tech_lead_msg:
-            st.success(st.session_state.tech_lead_msg)
-        st.divider()
-
-    # ── CONVERSOR ─────────────────────────────────────────────────
-    if st.button("🔄 Abrir Estudio de Conversión", use_container_width=True):
-        st.session_state["suggested_format"] = ""
-        panel_conversor()
 
     # ── MOTOR ACTIVO ──────────────────────────────────────────────
-    st.header("⚙️ Configuración Manual")
+    st.markdown("**⚙️ Motor Activo**")
     motores_disponibles = [
         "Groq Llama 3.3 (Lead Software Engineer / Creador)",
         "Gemini 2.5 Pro (Análisis Multimedia y Arte)",
-        "Ollama Qwen (Desarrollo Local Zero-Trust)"
+        "Ollama Qwen (Desarrollo Local Zero-Trust)",
+        "Groq Whisper (Oídos: Transcripción STT)",
+        "OpenAI TTS (Voz: Text-to-Speech)",
+        "Generador de Assets (Manos: Texto a Imagen)",
     ]
     if motor_forzado:
         motor = motor_forzado
@@ -231,16 +235,202 @@ with st.sidebar:
         motor = st.selectbox("Cerebro Activo:", motores_disponibles,
                              index=st.session_state.motor_activo_idx, key="motor_manual_selector")
 
-    st.info("💡 Pídele de forma natural que cree imágenes. Ej: *'Genera una imagen de un logo...'*")
     st.divider()
-    archivo = st.file_uploader("📁 Adjuntar Documento, Imagen o Vídeo",
-                              type=['py','js','txt','pdf','docx','odt','xlsx','xls','ods','csv','pptx','odp','png','jpg','jpeg','mp4','mov','avi'])
-    if st.button("🗑️ Borrar Memoria Completa", use_container_width=True):
+
+    # ── ADJUNTAR ARCHIVO ──────────────────────────────────────────
+    st.markdown("**📁 Adjuntar Archivo**")
+    archivo = st.file_uploader(
+        "Código, docs, imágenes, datos…",
+        type=None,
+        help="Formatos soportados: texto, código, PDF, Word, Excel, imágenes, JSON, YAML, logs y más.",
+        label_visibility="collapsed"
+    )
+
+    st.divider()
+
+    # ── HERRAMIENTAS MULTIMEDIA (colapsadas) ──────────────────────
+    with st.expander("🛠️ Herramientas Multimedia", expanded=False):
+
+        # Conversor
+        if st.button("🔄 Estudio de Conversión", use_container_width=True):
+            st.session_state["suggested_format"] = ""
+            panel_conversor()
+
+        st.markdown("---")
+
+        # STT: Groq Whisper
+        st.markdown("**🎙️ Transcripción STT — Groq Whisper**")
+        st.caption("Transcribe audio a texto con Whisper Large v3.")
+        audio_stt = st.file_uploader(
+            "Audio (mp3, wav, webm, ogg, flac, m4a)",
+            type=["mp3", "wav", "webm", "ogg", "flac", "m4a", "mp4"],
+            key="uploader_stt"
+        )
+        
+        if audio_stt:
+            st.audio(audio_stt, format=f"audio/{audio_stt.name.split('.')[-1]}")
+            if st.button("🎤 Transcribir", use_container_width=True, key="btn_stt"):
+                with st.spinner("Enviando a Groq Whisper… ⚡"):
+                    proveedor_stt = get_groq_whisper_provider()
+                    texto_transcrito, error_stt = proveedor_stt.transcribe(
+                        audio_bytes=audio_stt.getvalue(),
+                        filename=audio_stt.name
+                    )
+                if error_stt:
+                    st.error(error_stt)
+                else:
+                    st.session_state.stt_result_text = texto_transcrito
+                    st.success("✅ Transcripción completada")
+        
+        # Mostrar resultado y botón de envío fuera del bloque del botón de transcripción
+        if "stt_result_text" in st.session_state and st.session_state.stt_result_text:
+            st.text_area("Texto transcrito:", value=st.session_state.stt_result_text, height=120, key="stt_result_area")
+            if st.button("💬 Enviar al chat", use_container_width=True, key="btn_stt_inject"):
+                st.session_state.messages.append({"role": "user", "content": st.session_state.stt_result_text})
+                # Limpiar el resultado después de enviar si se desea, o dejarlo
+                # st.session_state.stt_result_text = "" 
+                guardar_memoria(st.session_state.messages)
+                st.rerun()
+
+        st.markdown("---")
+
+        # TTS: OpenAI / Edge
+        st.markdown("**🔊 Síntesis de Voz — TTS**")
+        st.caption("Convierte texto a voz natural.")
+        
+        col_prov, col_voice = st.columns([1, 1])
+        with col_prov:
+            prov_tts_sel = st.selectbox("Proveedor:", ["Edge TTS (Gratis)", "OpenAI TTS (Pago)"], key="tts_provider_sel")
+        
+        with col_voice:
+            if prov_tts_sel == "OpenAI TTS (Pago)":
+                voz_seleccionada = st.selectbox(
+                    "Voz:",
+                    ["alloy", "echo", "fable", "onyx", "nova", "shimmer"],
+                    index=0,
+                    key="tts_voice_selector"
+                )
+            else:
+                from src.services.audio_service import AVAILABLE_EDGE_VOICES
+                voz_alias = st.selectbox("Voz (Regional):", list(AVAILABLE_EDGE_VOICES.keys()), key="edge_voice_selector")
+                voz_seleccionada = AVAILABLE_EDGE_VOICES[voz_alias]
+
+        texto_para_tts = st.text_area(
+            "Texto a sintetizar:",
+            placeholder="Escribe aquí el texto que quieres escuchar…",
+            height=100,
+            max_chars=4096,
+            key="tts_input_text"
+        )
+        if st.button("🔊 Generar Audio", use_container_width=True, key="btn_tts"):
+            if not texto_para_tts.strip():
+                st.warning("⚠️ Escribe algo antes de sintetizar.")
+            else:
+                with st.spinner(f"Sintetizando con {prov_tts_sel}…"):
+                    if prov_tts_sel == "OpenAI TTS (Pago)":
+                        proveedor_tts = get_openai_tts_provider(voice=voz_seleccionada)
+                    else:
+                        proveedor_tts = get_edge_tts_provider(voice=voz_seleccionada)
+                        
+                    audio_bytes_out, audio_filepath, error_tts = proveedor_tts.synthesize(texto_para_tts)
+                if error_tts:
+                    st.error(error_tts)
+                else:
+                    st.session_state.tts_result_path = audio_filepath
+                    st.session_state.tts_result_bytes = audio_bytes_out
+                    st.success("✅ ¡Audio generado!")
+
+        if "tts_result_path" in st.session_state and st.session_state.tts_result_path:
+            st.audio(st.session_state.tts_result_bytes, format="audio/mp3")
+            render_download_button(st.session_state.tts_result_path)
+
+        st.markdown("---")
+
+        # Generación de Imágenes
+        st.markdown("**🎨 Generador de Assets — Texto a Imagen**")
+        st.caption("Genera imágenes con DALL-E 3 o Stability AI.")
+        proveedor_imagen_sel = st.radio(
+            "Proveedor:",
+            ["OpenAI DALL-E 3", "Stability AI"],
+            horizontal=True,
+            key="img_provider_radio"
+        )
+        prompt_imagen_gen = st.text_area(
+            "Prompt:",
+            placeholder="Ej: A futuristic robot reading a book…",
+            height=80,
+            key="img_gen_prompt"
+        )
+        if proveedor_imagen_sel == "OpenAI DALL-E 3":
+            col_size, col_quality = st.columns(2)
+            with col_size:
+                dalle_size = st.selectbox("Resolución:", ["1024x1024", "1792x1024", "1024x1792"], key="dalle_size")
+            with col_quality:
+                dalle_quality = st.selectbox("Calidad:", ["standard", "hd"], key="dalle_quality")
+        else:
+            stability_aspect = st.selectbox(
+                "Proporción:", ["1:1", "16:9", "9:16", "3:2", "2:3", "4:5", "5:4"], key="stability_aspect"
+            )
+            stability_negative = st.text_input(
+                "Prompt negativo (opcional):",
+                placeholder="Ej: blurry, low quality",
+                key="stability_negative"
+            )
+        if st.button("🎨 Generar Imagen", use_container_width=True, key="btn_img_gen"):
+            if not prompt_imagen_gen.strip():
+                st.warning("⚠️ Escribe un prompt antes de generar.")
+            else:
+                with st.spinner(f"Generando con {proveedor_imagen_sel}…"):
+                    from src.services.image_gen_service import generate_image
+                    from PIL import Image
+                    if proveedor_imagen_sel == "OpenAI DALL-E 3":
+                        filepath_gen, error_gen = generate_image(
+                            prompt=prompt_imagen_gen,
+                            provider="openai_dalle3",
+                            size=st.session_state.get("dalle_size", "1024x1024"),
+                            quality=st.session_state.get("dalle_quality", "standard")
+                        )
+                    else:
+                        filepath_gen, error_gen = generate_image(
+                            prompt=prompt_imagen_gen,
+                            provider="stability_ai",
+                            aspect_ratio=st.session_state.get("stability_aspect", "1:1"),
+                            negative_prompt=st.session_state.get("stability_negative", "")
+                        )
+                if error_gen:
+                    st.error(error_gen)
+                else:
+                    st.session_state.img_result_path = filepath_gen
+                    st.session_state.img_result_prompt = prompt_imagen_gen
+                    st.session_state.img_result_provider = proveedor_imagen_sel
+                    st.success("✅ ¡Imagen generada!")
+                    
+                    # Registrar el asset en el historial de chat (aquí sí podemos hacerlo inmediato)
+                    st.session_state.messages.append({
+                        "role": "assistant",
+                        "content": f"🎨 *Asset generado con {proveedor_imagen_sel}:* '{prompt_imagen_gen}'",
+                        "image_path": filepath_gen
+                    })
+                    guardar_memoria(st.session_state.messages)
+
+        if "img_result_path" in st.session_state and st.session_state.img_result_path:
+            from PIL import Image
+            img_gen = Image.open(st.session_state.img_result_path)
+            st.image(img_gen, caption=st.session_state.img_result_prompt[:60], use_container_width=True)
+            render_download_button(st.session_state.img_result_path)
+
+    st.divider()
+
+    # ── BORRAR MEMORIA — siempre visible ──────────────────────────
+    st.markdown('<div class="danger-btn">', unsafe_allow_html=True)
+    if st.button("🗑️ Borrar Memoria Completa", use_container_width=True, key="btn_borrar_memoria"):
         st.session_state.messages = []
         limpiar_memoria()
         st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
 for msg in st.session_state.messages:
+    if msg.get("role") == "system": continue
     avatar = "🧑‍💻" if msg["role"]=="user" else "🤖"
     with st.chat_message(msg["role"], avatar=avatar):
         if msg.get("content"):
@@ -259,12 +449,33 @@ for msg in st.session_state.messages:
 if prompt := st.chat_input("Escribe tu consulta o pídele que genere una imagen..."):
     
     es_comando_imagen, prompt_artistico = parse_intent(prompt)
-    
+
+    # ── GUARDIA: Motores herramienta no procesan mensajes de chat ─────────────
+    # Estos motores tienen su propio panel en el sidebar y NO son LLMs de chat.
+    # Si el usuario escribe en el chat con uno de ellos activo, mostramos guía.
+    MOTORES_HERRAMIENTA = {
+        "Groq Whisper (Oídos: Transcripción STT)",
+        "OpenAI TTS (Voz: Text-to-Speech)",
+        "Generador de Assets (Manos: Texto a Imagen)",
+    }
+    if motor in MOTORES_HERRAMIENTA:
+        _guias = {
+            "Groq Whisper (Oídos: Transcripción STT)":
+                "🎙️ **Modo STT activo.** Sube un archivo de audio en el panel **'Groq Whisper'** del sidebar y pulsa *'Transcribir'*.",
+            "OpenAI TTS (Voz: Text-to-Speech)":
+                "🔊 **Modo TTS activo.** Escribe el texto en el panel **'OpenAI TTS'** del sidebar y pulsa *'Generar Audio'*.",
+            "Generador de Assets (Manos: Texto a Imagen)":
+                "🎨 **Modo Imagen activo.** Escribe tu prompt en el panel **'Generador de Assets'** del sidebar y pulsa *'Generar Imagen'*.",
+        }
+        st.info(_guias[motor])
+        st.stop()
+    # ─────────────────────────────────────────────────────────────────────────
+
     if es_comando_imagen:
         if "Gemini" not in motor:
             st.warning("⚠️ La generación de arte requiere seleccionar el motor **Gemini** en el panel de control.")
             st.stop()
-            
+
         if not prompt_artistico:
             st.error("❌ Te ha faltado decirme qué quieres que dibuje.")
             st.stop()
@@ -277,7 +488,7 @@ if prompt := st.chat_input("Escribe tu consulta o pídele que genere una imagen.
             with st.spinner("Conectando con el estudio de arte de Gemini..."):
                 provider = GeminiProvider()
                 filepath, error = provider.generar_imagen(prompt_artistico)
-            
+
             if error:
                 st.error(error)
                 st.session_state.messages.append({"role": "assistant", "content": error})
@@ -285,10 +496,10 @@ if prompt := st.chat_input("Escribe tu consulta o pídele que genere una imagen.
                 img = Image.open(filepath)
                 st.image(img, caption=f"Obra: {prompt_artistico}", use_container_width=True)
                 render_download_button(filepath)
-                
+
                 response_text = f"Aquí tienes la imagen generada: '{prompt_artistico}'"
                 st.session_state.messages.append({
-                    "role": "assistant", 
+                    "role": "assistant",
                     "content": response_text,
                     "image_path": filepath
                 })
@@ -300,18 +511,35 @@ if prompt := st.chat_input("Escribe tu consulta o pídele que genere una imagen.
         video_adjunto_path = None
 
         if archivo:
-            if archivo.name.lower().endswith(('.png', '.jpg', '.jpeg')):
+            from pathlib import Path as _Path
+            _ext = _Path(archivo.name.lower()).suffix
+
+            # ── Ruta 1: Imágenes → PIL + Gemini Vision ────────────────────────
+            _EXTS_IMAGEN = {'.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.tiff', '.ico'}
+            # ── Ruta 2: Vídeos → Gemini File API ─────────────────────────────
+            _EXTS_VIDEO  = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.wmv'}
+
+            if _ext in _EXTS_IMAGEN:
                 imagen_adjunta = Image.open(archivo)
-                texto_extraido = f"\n*(Adjuntada imagen para análisis: {archivo.name})*"
-            elif archivo.name.lower().endswith(('.mp4', '.mov', '.avi')):
+                texto_extraido = f"\n*(Adjuntada imagen para análisis visual: {archivo.name})*"
+
+            elif _ext in _EXTS_VIDEO:
                 import uuid
-                safe_filename = f"video_analisis_{uuid.uuid4().hex[:8]}{os.path.splitext(archivo.name)[1]}"
+                safe_filename = f"video_analisis_{uuid.uuid4().hex[:8]}{_ext}"
                 video_adjunto_path = os.path.join(CARPETA_IMAGENES, safe_filename)
                 with open(video_adjunto_path, "wb") as f:
                     f.write(archivo.getbuffer())
                 texto_extraido = f"\n*(Adjuntado vídeo para análisis: {archivo.name})*"
+
             else:
-                texto_extraido = f"\n\n[CONTENIDO DE {archivo.name.upper()}]:\n{extraer_texto_archivo(archivo)}\n"
+                # ── Ruta 3: TODO LO DEMÁS → Router Universal de Archivos ─────
+                contenido_extraido = extraer_texto_archivo(archivo)
+                if contenido_extraido.startswith("⛔"):
+                    # El router detectó un binario ininteligible — informar al usuario
+                    st.warning(contenido_extraido)
+                    texto_extraido = f"\n\n[ARCHIVO: {archivo.name}]\n{contenido_extraido}\n"
+                else:
+                    texto_extraido = f"\n\n[CONTENIDO DE {archivo.name.upper()}]:\n{contenido_extraido}\n"
 
         prompt_final = prompt + texto_extraido
         st.session_state.messages.append({"role": "user", "content": prompt_final})
@@ -327,24 +555,47 @@ if prompt := st.chat_input("Escribe tu consulta o pídele que genere una imagen.
                 if video_adjunto_path:
                     import google.genai as ggenai
                     import time
-                    with st.spinner("Subiendo y procesando vídeo en los servidores de Gemini... esto puede tardar un minuto."):
-                        cliente_g = ggenai.Client(api_key=CLAVE_GEMINI)
-                        video_file = cliente_g.files.upload(file=video_adjunto_path)
-                        while video_file.state.name == "PROCESSING":
-                            time.sleep(2)
-                            video_file = cliente_g.files.get(name=video_file.name)
-                        if video_file.state.name == "FAILED":
-                            st.error("Error al procesar el vídeo en Google.")
-                            st.stop()
-                    carga_util.append(video_file)
-                provider = GeminiProvider()
+                    
+                    try:
+                        with st.status("🎬 Inicializando procesamiento de vídeo...", expanded=True) as status:
+                            st.write("📤 Subiendo archivo seguro a Gemini...")
+                            cliente_g = ggenai.Client(api_key=CLAVE_GEMINI)
+                            video_file = cliente_g.files.upload(file=video_adjunto_path)
+                            
+                            st.write("⚙️ Analizando metadatos y fotogramas clave...")
+                            start_time = time.time()
+                            
+                            # UX Dinámica: Actualizar el estado visualmente para mitigar la percepción de bloqueo
+                            while video_file.state.name == "PROCESSING":
+                                elapsed = int(time.time() - start_time)
+                                status.update(label=f"🎬 Analizando vídeo en la nube... (⏳ {elapsed}s transcurridos)", state="running")
+                                time.sleep(2)
+                                video_file = cliente_g.files.get(name=video_file.name)
+                                
+                            if video_file.state.name == "FAILED":
+                                status.update(label="❌ Error crítico de procesamiento", state="error", expanded=True)
+                                st.error("Fallo interno en los servidores de Google GenAI al decodificar el vídeo.")
+                                st.stop()
+                                
+                            status.update(label=f"✅ Vídeo procesado con éxito en {int(time.time() - start_time)}s", state="complete", expanded=False)
+                            
+                        carga_util.append(video_file)
+                    finally:
+                        # Garbage Collection: Borramos el archivo local subido independientemente del resultado
+                        if os.path.exists(video_adjunto_path):
+                            os.remove(video_adjunto_path)
+
+                provider = get_gemini_provider()
             elif "Groq" in motor:
                 if imagen_adjunta: st.warning("⚠️ Este motor ignora imágenes locales.")
-                provider = GroqProvider()
+                provider = get_groq_provider()
             else:
                 if imagen_adjunta: st.warning("⚠️ Ollama ignora imágenes locales.")
-                provider = OllamaProvider()
+                provider = get_ollama_provider()
 
+            # Inicializar variables antes del bucle (guarda contra NameError si el bucle falla)
+            clean_res = ""
+            file_paths = []
             max_iteraciones = 2
             iteracion = 0
             
@@ -352,35 +603,46 @@ if prompt := st.chat_input("Escribe tu consulta o pídele que genere una imagen.
                 iteracion += 1
                 full_res = ""
                 
-                # Ejecutar el stream con el prompt del rol activo
-                if "Gemini" in motor:
-                    gen = provider.stream_chat(carga_util, st.session_state.messages[:-1], system_instruction=system_instruction_activo)
-                elif "Groq" in motor:
-                    gen = provider.stream_chat(prompt_final, st.session_state.messages[:-1], system_instruction=system_instruction_activo)
-                else:
-                    gen = provider.stream_chat(prompt_final, st.session_state.messages[:-1], system_instruction=system_instruction_activo)
-                    
-                for chunk in gen:
-                    if chunk:  # Guarda contra None de Gemini Vision u otros proveedores
-                        full_res += chunk
-                        res_placeholder.markdown(full_res + "▌")
-                    
-                # [NUEVO] Failover System para Groq (Rate Limit 429)
-                if ("rate_limit" in full_res.lower() or "429" in full_res) and "Groq" in motor:
-                    res_placeholder.empty()
-                    st.warning("⚠️ Límite de uso de Groq alcanzado. Redirigiendo tu consulta al motor Gemini de alta disponibilidad...")
-                    # Configurar Gemini como Failover
-                    from src.services.llm_provider import GeminiProvider
-                    provider = GeminiProvider()
-                    carga_util = [prompt_final]
-                    if imagen_adjunta: carga_util.append(imagen_adjunta)
-                    # Reiniciar generación con el mismo system_instruction del rol
-                    full_res = ""
-                    gen = provider.stream_chat(carga_util, st.session_state.messages[:-1], system_instruction=system_instruction_activo)
+                # Manejo robusto con try-except (Capturamos Timeout o Rate Limits reales)
+                try:
+                    # Ejecutar el stream con el prompt del rol activo
+                    if "Gemini" in motor:
+                        gen = provider.stream_chat(carga_util, st.session_state.messages[:-1], system_instruction=system_instruction_activo)
+                    elif "Groq" in motor:
+                        gen = provider.stream_chat(prompt_final, st.session_state.messages[:-1], system_instruction=system_instruction_activo)
+                    else:
+                        gen = provider.stream_chat(prompt_final, st.session_state.messages[:-1], system_instruction=system_instruction_activo)
+                        
                     for chunk in gen:
-                        if chunk:  # Guarda contra None en el Failover
+                        if chunk:  # Guarda contra None de Gemini Vision u otros proveedores
                             full_res += chunk
                             res_placeholder.markdown(full_res + "▌")
+                            
+                except Exception as e:
+                    # [FAILOVER ROBUSTO] Capturamos fallos del proveedor primario
+                    if "Groq" in motor:
+                        res_placeholder.empty()
+                        st.warning(f"⚠️ El motor primario (Groq) falló ({str(e)}). Redirigiendo a Gemini...")
+                        
+                        from src.services.llm_provider import GeminiProvider
+                        provider_backup = GeminiProvider()
+                        carga_util = [prompt_final]
+                        if imagen_adjunta: carga_util.append(imagen_adjunta)
+                        
+                        full_res = ""
+                        try:
+                            gen_backup = provider_backup.stream_chat(carga_util, st.session_state.messages[:-1], system_instruction=system_instruction_activo)
+                            for chunk in gen_backup:
+                                if chunk:
+                                    full_res += chunk
+                                    res_placeholder.markdown(full_res + "▌")
+                        except Exception as e_backup:
+                            st.error(f"❌ Fallo crítico en el sistema de respaldo: {e_backup}")
+                            break # Rompemos el ciclo si ambos motores fallan
+                    else:
+                        st.error(f"❌ Error en la generación ({motor}): {e}")
+                        break
+
                         
                 # Post-procesamiento
                 from src.core.agent_tools import parse_tool_calls
