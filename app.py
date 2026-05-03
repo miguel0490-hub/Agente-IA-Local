@@ -92,7 +92,7 @@ st.markdown("""
         text-shadow: 0 0 20px rgba(0, 242, 254, 0.4);
         margin-bottom: 0px;
         line-height: 1.2;
-    ">⚡ SuperAgente IA Pro v4.1</h1>
+    ">⚡ SuperAgente IA Pro</h1>
     <p style="
         font-size: 1.1rem;
         color: #A0AAB5;
@@ -650,6 +650,57 @@ if prompt := st.chat_input("Escribe tu consulta o pídele que genere una imagen.
                 
                 clean_res, tools = parse_tool_calls(full_res)
                 res_placeholder.markdown(clean_res)
+                
+                # 0. Comprobar si hay ejecución de código local
+                execute_tool = next((t for t in tools if t.get("action") == "execute_code"), None)
+                if execute_tool:
+                    codigo = execute_tool.get("code", "")
+                    with st.spinner("Ejecutando código Python en sandbox local..."):
+                        from src.services.execution_service import CodeExecutionService
+                        exec_service = CodeExecutionService()
+                        resultado_ejecucion = exec_service.execute_python(codigo)
+                        
+                    st.info("💻 Ejecución de código local completada.")
+                    
+                    st.session_state.messages.append({"role": "assistant", "content": clean_res})
+                    msg_sistema = f"RESULTADO DE LA EJECUCIÓN (STDOUT/STDERR):\n{resultado_ejecucion}\n\nPor favor, usa esta salida para responder al usuario o continuar tu tarea."
+                    st.session_state.messages.append({"role": "user", "content": msg_sistema})
+                    
+                    if "Gemini" in motor:
+                        carga_util = [msg_sistema]
+                    else:
+                        prompt_final = msg_sistema
+                        
+                    res_placeholder = st.empty()
+                    continue
+                    
+                # 0.5. Comprobar consulta a Cerebro RAG
+                rag_tool = next((t for t in tools if t.get("action") == "query_rag"), None)
+                if rag_tool:
+                    query = rag_tool.get("query", "")
+                    with st.spinner(f"Consultando Cerebro RAG para: '{query}'..."):
+                        from src.services.rag_service import RAGService
+                        rag_service = RAGService()
+                        resultados = rag_service.query(query)
+                        
+                    st.info(f"🧠 Consulta RAG completada: {len(resultados)} fragmentos encontrados.")
+                    
+                    st.session_state.messages.append({"role": "assistant", "content": clean_res})
+                    if resultados:
+                        res_texto = "\n\n".join([f"📄 {r['filename']}:\n{r['content']}..." for r in resultados])
+                        msg_sistema = f"RESULTADOS DEL CEREBRO RAG PARA '{query}':\n{res_texto}\n\nUsa esta información parcial para responder."
+                    else:
+                        msg_sistema = f"El Cerebro RAG no encontró resultados relevantes para '{query}'."
+                        
+                    st.session_state.messages.append({"role": "user", "content": msg_sistema})
+                    
+                    if "Gemini" in motor:
+                        carga_util = [msg_sistema]
+                    else:
+                        prompt_final = msg_sistema
+                        
+                    res_placeholder = st.empty()
+                    continue
                 
                 # 1. Comprobar si hay búsqueda en internet
                 search_tool = next((t for t in tools if t.get("action") == "search_web"), None)

@@ -8,7 +8,7 @@ def test_page_load(page: Page):
     """Verifica que la aplicación carga correctamente."""
     page.goto(BASE_URL)
     # Esperar a que el título principal aparezca (usando el texto exacto del h1)
-    expect(page.get_by_text("SuperAgente IA Pro v4.1")).to_be_visible(timeout=15000)
+    expect(page.get_by_text("SuperAgente IA Pro")).to_be_visible(timeout=15000)
 
 def test_role_switch_logic(page: Page):
     """Verifica que el cambio de rol funciona y actualiza el motor forzado."""

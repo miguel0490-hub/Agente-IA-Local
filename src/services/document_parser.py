@@ -247,13 +247,28 @@ def extraer_texto_archivo(file_obj) -> str:
 
     if extractor:
         try:
-            return extractor(file_obj)
+            texto_extraido = extractor(file_obj)
         except Exception as e:
-            return (
+            texto_extraido = (
                 f"⚠️ Error procesando '{nombre}' con el parser de '{ext}':\n{e}\n\n"
                 f"Intentando lectura como texto plano..."
                 f"\n{_fallback_universal(file_obj, nombre)}"
             )
+    else:
+        # Sin extractor dedicado → Fallback Universal
+        texto_extraido = _fallback_universal(file_obj, nombre)
 
-    # Sin extractor dedicado → Fallback Universal
-    return _fallback_universal(file_obj, nombre)
+    # Evaluación para RAG (Archivos muy grandes > 5000 palabras)
+    palabras = len(texto_extraido.split())
+    if palabras > 5000 and not texto_extraido.startswith("⛔"):
+        from src.services.rag_service import RAGService
+        rag = RAGService()
+        chunks = rag.index_document(nombre, texto_extraido)
+        return (
+            f"📚 [ARCHIVO GRANDE INDEXADO EN CEREBRO RAG]\n"
+            f"El archivo '{nombre}' es demasiado largo ({palabras} palabras) para leerse completo. "
+            f"Se ha indexado en el Cerebro RAG en {chunks} fragmentos para conservar el rendimiento.\n"
+            f"Para consultar información específica, DEBES usar la herramienta 'query_rag' con palabras clave de tu consulta."
+        )
+
+    return texto_extraido
