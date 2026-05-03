@@ -1,4 +1,5 @@
 import streamlit as st
+st.set_page_config(page_title="SuperAgente IA Pro", page_icon="⚡", layout="wide", initial_sidebar_state="expanded")
 import os
 import sys
 
@@ -66,7 +67,7 @@ from src.core.ui_helpers import render_download_button
 from src.services.memory_service import cargar_memoria, guardar_memoria, limpiar_memoria
 
 # 1. CONFIGURACIÓN Y UI PREMIUM
-st.set_page_config(page_title=PAGE_TITLE, page_icon=PAGE_ICON, layout=LAYOUT)
+# set_page_config ejecutado en la línea 2
 st.markdown(ESTILOS_CSS, unsafe_allow_html=True)
 
 if not os.path.exists(CARPETA_IMAGENES):

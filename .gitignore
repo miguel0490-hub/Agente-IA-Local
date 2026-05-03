@@ -11,7 +11,6 @@ __pycache__/
 *.ico
 
 # Outputs del Agente y configuración local
-.streamlit/
 generated_images/
 historial_chat.json
 test_output.pdf
