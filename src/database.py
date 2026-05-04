@@ -58,6 +58,11 @@ def init_db():
     )
     ''')
     
+    try:
+        cursor.execute('ALTER TABLE users ADD COLUMN reset_token TEXT')
+    except Exception:
+        pass
+        
     conn.commit()
     conn.close()
 
@@ -122,6 +127,11 @@ def update_api_keys(user_id, api_keys_dict):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("UPDATE users SET encrypted_api_keys = ? WHERE id = ?", (encrypted, user_id))
+    try:
+        cursor.execute('ALTER TABLE users ADD COLUMN reset_token TEXT')
+    except Exception:
+        pass
+        
     conn.commit()
     conn.close()
 
@@ -159,6 +169,11 @@ def delete_chat(chat_id):
     cursor = conn.cursor()
     cursor.execute("DELETE FROM messages WHERE chat_id = ?", (chat_id,))
     cursor.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
+    try:
+        cursor.execute('ALTER TABLE users ADD COLUMN reset_token TEXT')
+    except Exception:
+        pass
+        
     conn.commit()
     conn.close()
 
@@ -167,6 +182,11 @@ def update_chat_title(chat_id, new_title):
     cursor = conn.cursor()
     cursor.execute("UPDATE chats SET title = ?, updated_at = ? WHERE id = ?", 
                    (new_title, datetime.now(), chat_id))
+    try:
+        cursor.execute('ALTER TABLE users ADD COLUMN reset_token TEXT')
+    except Exception:
+        pass
+        
     conn.commit()
     conn.close()
 
@@ -217,6 +237,11 @@ def save_chat_messages(chat_id, messages):
                        (chat_id, role, content, extra_json))
                        
     cursor.execute("UPDATE chats SET updated_at = ? WHERE id = ?", (datetime.now(), chat_id))
+    try:
+        cursor.execute('ALTER TABLE users ADD COLUMN reset_token TEXT')
+    except Exception:
+        pass
+        
     conn.commit()
     conn.close()
 
@@ -224,8 +249,54 @@ def delete_chat(chat_id):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
+    try:
+        cursor.execute('ALTER TABLE users ADD COLUMN reset_token TEXT')
+    except Exception:
+        pass
+        
     conn.commit()
     conn.close()
 
 # Inicializar DB al importar
 init_db()
+
+def generate_password_reset_token(email):
+    import uuid
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT first_name FROM users WHERE email = ?", (email,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return False, None, None
+        
+    token = uuid.uuid4().hex
+    cursor.execute("UPDATE users SET reset_token = ? WHERE email = ?", (token, email))
+    conn.commit()
+    conn.close()
+    return True, row['first_name'], token
+
+def verify_reset_token(token):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, email FROM users WHERE reset_token = ?", (token,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return True, row['id']
+    return False, None
+
+def update_password_with_token(token, new_password):
+    success, user_id = verify_reset_token(token)
+    if not success:
+        return False, "Token inválido o expirado."
+        
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(new_password.encode('utf-8'), salt).decode('utf-8')
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET password_hash = ?, reset_token = NULL WHERE id = ?", (hashed, user_id))
+    conn.commit()
+    conn.close()
+    return True, "Contraseña actualizada con éxito."

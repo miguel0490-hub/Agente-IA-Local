@@ -31,6 +31,8 @@ if "onboarding_step" not in st.session_state:
     st.session_state.onboarding_step = 0
 if "temp_keys" not in st.session_state:
     st.session_state.temp_keys = {}
+if "auto_close_sidebar" not in st.session_state:
+    st.session_state.auto_close_sidebar = False
 
 # --- ESTILOS ---
 st.markdown(ESTILOS_CSS, unsafe_allow_html=True)
@@ -48,6 +50,28 @@ if "token" in st.query_params:
         st.error("❌ El token de verificación es inválido o la cuenta ya ha sido verificada.")
     st.query_params.clear()
 
+if "reset_token" in st.query_params:
+    from src.database import update_password_with_token
+    reset_token = st.query_params["reset_token"]
+    st.markdown("<h2 style='text-align: center; color: #00F2FE;'>Recuperación de Contraseña</h2>", unsafe_allow_html=True)
+    with st.form("reset_password_form"):
+        new_password = st.text_input("Nueva Contraseña", type="password")
+        confirm_password = st.text_input("Confirmar Nueva Contraseña", type="password")
+        if st.form_submit_button("Actualizar Contraseña"):
+            if new_password and new_password == confirm_password:
+                success, msg = update_password_with_token(reset_token, new_password)
+                if success:
+                    st.success(msg)
+                    st.query_params.clear()
+                    import time
+                    time.sleep(2)
+                    st.rerun()
+                else:
+                    st.error(msg)
+            else:
+                st.error("Las contraseñas no coinciden o están vacías.")
+    st.stop()
+
 # --- LOGIN Y REGISTRO ---
 if not st.session_state.user_id:
     col_left, central_col, col_right = st.columns([1, 2, 1])
@@ -55,7 +79,7 @@ if not st.session_state.user_id:
         st.markdown("<h1 style='text-align: center; color: #00F2FE;'>⚡ SuperAgente IA Pro</h1>", unsafe_allow_html=True)
         st.markdown("<h3 style='text-align: center; color: #A0AAB5;'>Acceso al Sistema</h3>", unsafe_allow_html=True)
         
-        tab1, tab2 = st.tabs(["Iniciar Sesión", "Registrarse"])
+        tab1, tab2, tab3 = st.tabs(["Iniciar Sesión", "Registrarse", "Olvidé mi contraseña"])
         
         with tab1:
             with st.form("login_form"):
@@ -110,6 +134,21 @@ if not st.session_state.user_id:
                                 st.success(f"¡Bienvenido/a {first_name}! Revisa tu bandeja de entrada (y Spam) para activar tu cuenta Premium.")
                             else:
                                 st.error(result)
+
+        with tab3:
+            with st.form("forgot_password_form"):
+                rec_email = st.text_input("Correo Electrónico registrado")
+                if st.form_submit_button("Enviar enlace de recuperación", use_container_width=True):
+                    if rec_email:
+                        from src.database import generate_password_reset_token
+                        success, f_name, r_token = generate_password_reset_token(rec_email)
+                        if success:
+                            from src.services.email_service import send_password_reset_email
+                            send_password_reset_email(rec_email, f_name, r_token)
+                        # Mostrar siempre success por seguridad (no revelar si el correo existe)
+                        st.success("Si el correo está registrado, recibirás un enlace de recuperación pronto.")
+                    else:
+                        st.warning("Por favor, introduce tu correo electrónico.")
     st.stop()
 
 # --- ONBOARDING DE API KEYS ---
@@ -297,6 +336,7 @@ with st.sidebar:
         if chat_seleccionado != st.session_state.chat_id:
             st.session_state.chat_id = chat_seleccionado
             st.session_state.messages = cargar_memoria(st.session_state.chat_id)
+            st.session_state.auto_close_sidebar = True
             st.rerun()
     else:
         st.info("No tienes chats.")
@@ -310,20 +350,21 @@ with st.sidebar:
 
 
 # Mapa de Roles
-ROLES = {
-    "🧠 Asistente General (Tech Lead)": {
-        "prompt": PROMPT_TECH_LEAD,
-        "motor_forzado": None,
-    },
-    "🏗️ Arquitecto de Software (App Builder)": {
-        "prompt": PROMPT_APP_BUILDER,
-        "motor_forzado": "Groq Llama 3.3 (Lead Software Engineer / Creador)",
-    },
-    "🎨 Diseñador Frontend UI/UX (Vision)": {
-        "prompt": PROMPT_UI_DESIGNER,
-        "motor_forzado": "Gemini 2.5 Pro (Análisis Multimedia y Arte)",
-    },
-}
+def get_roles():
+    return {
+        "🧠 Asistente General (Tech Lead)": {
+            "prompt": PROMPT_TECH_LEAD,
+            "motor_forzado": None,
+        },
+        "🏗️ Arquitecto de Software (App Builder)": {
+            "prompt": PROMPT_APP_BUILDER,
+            "motor_forzado": "Groq Llama 3.3 (Lead Software Engineer / Creador)",
+        },
+        "🎨 Diseñador Frontend UI/UX (Vision)": {
+            "prompt": PROMPT_UI_DESIGNER,
+            "motor_forzado": "Gemini 2.5 Pro (Análisis Multimedia y Arte)",
+        },
+    }
 
 def cambiar_rol():
     nuevo_rol = st.session_state.selector_rol
@@ -403,6 +444,27 @@ def panel_conversor():
                 key="btn_dl_conv"
             )
 
+# --- LÓGICA DE AUTO-CIERRE EN MÓVILES ---
+if st.session_state.get("auto_close_sidebar"):
+    st.session_state.auto_close_sidebar = False
+    import streamlit.components.v1 as components
+    components.html(
+        """
+        <script>
+        if (window.innerWidth <= 768) {
+            const collapseBtn = window.parent.document.querySelector('button[data-testid="stSidebarCollapse"]');
+            if (collapseBtn) {
+                const sidebar = window.parent.document.querySelector('section[data-testid="stSidebar"]');
+                if (sidebar && sidebar.getAttribute('aria-expanded') === 'true') {
+                    collapseBtn.click();
+                }
+            }
+        }
+        </script>
+        """,
+        height=0, width=0
+    )
+
 # --- INTERFAZ PRINCIPAL ---
 st.markdown("""
 <div style="text-align: center; margin-top: -30px; margin-bottom: 30px;">
@@ -436,11 +498,11 @@ with st.sidebar:
     st.header("🎭 Rol del Agente")
     rol_seleccionado = st.selectbox(
         "Modo de operación:",
-        list(ROLES.keys()),
+        list(get_roles().keys()),
         key="selector_rol",
         on_change=cambiar_rol
     )
-    rol_config = ROLES[rol_seleccionado]
+    rol_config = get_roles()[rol_seleccionado]
     system_instruction_activo = rol_config["prompt"]
     motor_forzado = rol_config["motor_forzado"]
 
@@ -681,6 +743,7 @@ for msg in st.session_state.messages:
                 render_download_button(fp)
 
 if prompt := st.chat_input("Escribe tu consulta o pídele que genere una imagen..."):
+    st.session_state.auto_close_sidebar = True
     
     # --- AUTO-RENOMBRADO DE CHAT ---
     renamed = False
