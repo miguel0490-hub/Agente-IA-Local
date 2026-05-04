@@ -1,7 +1,18 @@
 import os
-from dotenv import load_dotenv
+from dotenv import load_dotenv, set_key
 
 load_dotenv()
+
+APP_SECRET_KEY = os.getenv("APP_SECRET_KEY")
+if not APP_SECRET_KEY:
+    try:
+        from cryptography.fernet import Fernet
+        APP_SECRET_KEY = Fernet.generate_key().decode()
+        env_path = os.path.join(os.getcwd(), ".env")
+        set_key(env_path, "APP_SECRET_KEY", APP_SECRET_KEY)
+        os.environ["APP_SECRET_KEY"] = APP_SECRET_KEY
+    except ImportError:
+        print("Advertencia: cryptography no está instalado. No se generó APP_SECRET_KEY.")
 
 # Configuración General
 PAGE_TITLE = "SuperAgente IA Pro"
@@ -244,7 +255,19 @@ ESTILOS_CSS = f"""
     [data-testid="stSidebarCollapseButton"],
     [data-testid="stExpandSidebarButton"] {{
         visibility: visible !important;
-        color: {Colors.PRIMARY} !important;
+        color: #FFFFFF !important;
+        background-color: #334155 !important;
+        border-radius: 5px !important;
+        padding: 4px 8px !important;
+        z-index: 10000 !important;
+    }}
+    
+    [data-testid="collapsedControl"]::after {{
+        content: " Abrir Menú";
+        font-family: 'Inter', sans-serif;
+        font-size: 0.9rem;
+        font-weight: 600;
+        margin-left: 4px;
     }}
     
     /* Fondo global y tipografía */
@@ -376,6 +399,8 @@ ESTILOS_CSS = f"""
         backdrop-filter: blur(15px) !important;
         padding: 5px 15px !important;
         margin-bottom: 20px !important;
+        z-index: 99 !important;
+        position: relative !important;
     }}
     [data-testid="stChatInput"]:focus-within {{
         border-color: {Colors.PRIMARY} !important;

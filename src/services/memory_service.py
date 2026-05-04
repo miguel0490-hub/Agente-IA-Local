@@ -1,42 +1,49 @@
 import os
 import json
-from src.core.config import ARCHIVO_MEMORIA
+import threading
+from src.database import get_chat_messages, save_chat_messages, delete_chat
 
 # Tokens/Límites de Seguridad (Aprox. 4 chars por token)
 MAX_HISTORIAL_MENSAJES = 20
 MENSAJES_A_MANTENER_INTACTOS = 8 
 
-def cargar_memoria() -> list:
-    """Carga el historial de chat desde el archivo JSON."""
-    if os.path.exists(ARCHIVO_MEMORIA):
-        try:
-            with open(ARCHIVO_MEMORIA, "r", encoding="utf-8") as f: 
-                return json.load(f)
-        except Exception as e: 
-            print(f"Error cargando memoria: {e}")
-            return []
-    return []
+def cargar_memoria(chat_id: int) -> list:
+    """Carga el historial de chat desde la base de datos."""
+    if not chat_id:
+        return []
+    try:
+        return get_chat_messages(chat_id)
+    except Exception as e: 
+        print(f"Error cargando memoria de DB: {e}")
+        return []
 
-import threading
+def guardar_memoria(chat_id: int, mensajes: list, api_keys: dict = None):
+    """Guarda el historial de chat en la base de datos de forma asíncrona."""
+    if not chat_id:
+        return
 
-def guardar_memoria(mensajes: list):
-    """Guarda el historial de chat en el archivo JSON de forma asíncrona."""
     # Hacemos una copia profunda superficial para evitar race conditions en Streamlit
     mensajes_copy = list(mensajes)
     
-    def _guardar_background(msgs):
-        mensajes_optimizados = _optimizar_ventana_deslizante(msgs)
-        with open(ARCHIVO_MEMORIA, "w", encoding="utf-8") as f:
-            json.dump(mensajes_optimizados, f, indent=4, ensure_ascii=False)
+    def _guardar_background(c_id, msgs, keys):
+        mensajes_optimizados = _optimizar_ventana_deslizante(msgs, keys)
+        try:
+            save_chat_messages(c_id, mensajes_optimizados)
+        except Exception as e:
+            print(f"Error guardando memoria en DB: {e}")
             
-    threading.Thread(target=_guardar_background, args=(mensajes_copy,), daemon=True).start()
+    threading.Thread(target=_guardar_background, args=(chat_id, mensajes_copy, api_keys), daemon=True).start()
 
-def limpiar_memoria():
-    """Borra el archivo de memoria del sistema."""
-    if os.path.exists(ARCHIVO_MEMORIA):
-        os.remove(ARCHIVO_MEMORIA)
+def limpiar_memoria(chat_id: int):
+    """Borra el chat de la base de datos."""
+    if chat_id:
+        try:
+            # Eliminar todos los mensajes del chat
+            save_chat_messages(chat_id, [])
+        except Exception as e:
+            print(f"Error limpiando chat: {e}")
 
-def _optimizar_ventana_deslizante(mensajes: list) -> list:
+def _optimizar_ventana_deslizante(mensajes: list, api_keys: dict) -> list:
     """
     Mecanismo de 'Context Window Protection' (SoC):
     Si el número de mensajes excede el límite, extrae los más antiguos,
@@ -76,11 +83,14 @@ def _optimizar_ventana_deslizante(mensajes: list) -> list:
     )
 
     try:
-        # Importación local (Wrapper) para respetar Agnosticismo de Dependencias y evitar bucles circulares
         from src.services.llm_provider import GroqProvider
-        provider = GroqProvider()
+        groq_key = api_keys.get("GROQ_API_KEY") if api_keys else None
+        if not groq_key:
+            raise ValueError("Sin Groq API Key para comprimir memoria")
+            
+        provider = GroqProvider(api_key=groq_key)
         
-        # Llamada síncrona al stream de Groq (el más veloz)
+        # Llamada síncrona al stream de Groq
         generador = provider.stream_chat(prompt_compresion, [])
         nuevo_resumen = "".join([chunk for chunk in generador if chunk])
         
@@ -99,7 +109,11 @@ def _optimizar_ventana_deslizante(mensajes: list) -> list:
         print(f"[ALERTA DE SISTEMA] Fallo en Groq ({e_groq}). Iniciando failover a Gemini...")
         try:
             from src.services.llm_provider import GeminiProvider
-            provider_gemini = GeminiProvider()
+            gemini_key = api_keys.get("GEMINI_API_KEY") if api_keys else None
+            if not gemini_key:
+                raise ValueError("Sin Gemini API Key para comprimir memoria")
+                
+            provider_gemini = GeminiProvider(api_key=gemini_key)
             
             generador_gemini = provider_gemini.stream_chat(prompt_compresion, [])
             nuevo_resumen_gemini = "".join([chunk for chunk in generador_gemini if chunk])
@@ -117,5 +131,3 @@ def _optimizar_ventana_deslizante(mensajes: list) -> list:
             print(f"[CRÍTICO] Fallo total en LLMs (Groq y Gemini). Ejecutando poda en crudo. Error: {e_gemini}")
             # Degradación Elegante: Ambos motores caídos, podamos el array.
             return mensajes[-MAX_HISTORIAL_MENSAJES:]
-
-

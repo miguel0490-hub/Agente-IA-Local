@@ -6,21 +6,25 @@ import google.genai as ggenai
 from google.genai import types
 from groq import Groq
 
-from src.core.config import (
-    CLAVE_GEMINI, CLAVE_GROQ, CLAVE_OPENROUTER, CLAVE_OPENAI,
-    CARPETA_IMAGENES, PROMPT_TECH_LEAD
-)
+from src.core.config import CARPETA_IMAGENES, PROMPT_TECH_LEAD
 from openai import OpenAI
 
 class LLMProvider:
     """Clase base (Wrapper) para proveedores de modelos de lenguaje."""
+    def __init__(self, api_key=None):
+        self.api_key = api_key
+
     def stream_chat(self, mensaje: str, historial: list, system_instruction: str = None):
         raise NotImplementedError
 
 class GeminiProvider(LLMProvider):
     def stream_chat(self, carga_util, historial=None, system_instruction: str = None):
+        if not self.api_key:
+            yield "❌ Funcionalidad omitida durante el onboarding por falta de clave (Gemini). Por favor, actualiza tu perfil."
+            return
+            
         try:
-            cliente = ggenai.Client(api_key=CLAVE_GEMINI)
+            cliente = ggenai.Client(api_key=self.api_key)
             model_name = 'gemini-2.5-pro'
             
             # Configuramos los filtros de seguridad al mínimo para evitar que corte el código fuente generado
@@ -59,10 +63,9 @@ class GeminiProvider(LLMProvider):
             raise
             
     def generar_imagen(self, prompt_artistico: str):
+        if not self.api_key: return None, "❌ Funcionalidad omitida durante el onboarding por falta de clave (Gemini). Por favor, actualiza tu perfil."
         try:
-            if not CLAVE_GEMINI: return None, "❌ Falta Gemini API Key."
-            
-            cliente = ggenai.Client(api_key=CLAVE_GEMINI)
+            cliente = ggenai.Client(api_key=self.api_key)
             
             resultado = cliente.models.generate_images(
                 model='imagen-4.0-generate-001',
@@ -92,12 +95,17 @@ class GeminiProvider(LLMProvider):
             return None, f"❌ Error crítico en Generador de Arte: {e}"
 
 class GroqProvider(LLMProvider):
-    def __init__(self, model="llama-3.3-70b-versatile"):
+    def __init__(self, api_key=None, model="llama-3.3-70b-versatile"):
+        super().__init__(api_key)
         self.model = model
 
     def stream_chat(self, mensaje: str, historial: list, system_instruction: str = None):
+        if not self.api_key:
+            yield "❌ Funcionalidad omitida durante el onboarding por falta de clave (Groq). Por favor, actualiza tu perfil."
+            return
+            
         try:
-            cliente = Groq(api_key=CLAVE_GROQ)
+            cliente = Groq(api_key=self.api_key)
             mensajes = [{"role": "system", "content": system_instruction or PROMPT_TECH_LEAD}]
             for m in historial: 
                 if m.get("content"):
@@ -132,18 +140,13 @@ class OllamaProvider(LLMProvider):
 
 class OpenRouterProvider(LLMProvider):
     def stream_chat(self, mensaje: str, historial: list, system_instruction: str = None):
-        try:
-            import os
-            from dotenv import load_dotenv
-            load_dotenv(override=True)
-            clave_actual = os.getenv("OPENROUTER_API_KEY")
+        if not self.api_key:
+            yield "❌ Funcionalidad omitida durante el onboarding por falta de clave (OpenRouter). Por favor, actualiza tu perfil."
+            return
             
-            if not clave_actual:
-                yield "❌ Error: No se ha encontrado OPENROUTER_API_KEY en el archivo .env"
-                return
-                
+        try:
             cliente = OpenAI(
-                api_key=clave_actual,
+                api_key=self.api_key,
                 base_url="https://openrouter.ai/api/v1",
             )
             mensajes = [{"role": "system", "content": system_instruction or PROMPT_TECH_LEAD}]
@@ -163,62 +166,31 @@ class OpenRouterProvider(LLMProvider):
 
 
 class GroqWhisperProvider:
-    """
-    Wrapper de Groq Whisper para STT (Speech-to-Text).
-    Delega completamente en audio_service.transcribe_audio_with_groq.
-    Expone un método `transcribe` en lugar de `stream_chat` porque el
-    contrato de audio es fundamentalmente diferente al de chat.
-    """
+    def __init__(self, api_key=None):
+        self.api_key = api_key
 
     def transcribe(self, audio_bytes: bytes, filename: str = "audio.webm") -> tuple[str, str | None]:
-        """
-        Transcribe audio a texto.
-
-        Args:
-            audio_bytes: Contenido binario del archivo de audio.
-            filename: Nombre del archivo para que la API infiera el formato.
-
-        Returns:
-            Tuple (texto_transcrito, error_message). error_message es None si éxito.
-        """
+        if not self.api_key:
+            return "", "❌ Funcionalidad omitida durante el onboarding por falta de clave (Groq Whisper). Por favor, actualiza tu perfil."
         from src.services.audio_service import transcribe_audio_with_groq
-        return transcribe_audio_with_groq(audio_bytes, filename)
+        return transcribe_audio_with_groq(audio_bytes, self.api_key, filename)
 
 
 class OpenAITTSProvider:
-    """
-    Wrapper de OpenAI TTS para síntesis de voz (Text-to-Speech).
-    Delega completamente en audio_service.synthesize_speech_with_openai.
-    """
-
     VOCES_DISPONIBLES = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"]
 
-    def __init__(self, voice: str = "alloy"):
-        # Validación defensiva: si la voz no es válida, usamos el default
+    def __init__(self, voice: str = "alloy", api_key=None):
         self.voice = voice if voice in self.VOCES_DISPONIBLES else "alloy"
+        self.api_key = api_key
 
     def synthesize(self, text: str) -> tuple[bytes | None, str | None, str | None]:
-        """
-        Sintetiza texto a audio MP3.
-
-        Args:
-            text: El texto a convertir en voz (máx. 4096 caracteres).
-
-        Returns:
-            Tuple (audio_bytes, saved_filepath, error_message).
-            audio_bytes: Bytes del MP3 (para reproducción directa en Streamlit).
-            saved_filepath: Ruta del archivo guardado en disco.
-            error_message: None si éxito, descripción del error en caso contrario.
-        """
+        if not self.api_key:
+            return None, None, "❌ Funcionalidad omitida durante el onboarding por falta de clave (OpenAI TTS). Por favor, actualiza tu perfil."
         from src.services.audio_service import synthesize_speech_with_openai
-        return synthesize_speech_with_openai(text, voice=self.voice)
+        return synthesize_speech_with_openai(text, self.api_key, voice=self.voice)
 
 
 class EdgeTTSProvider:
-    """
-    Wrapper de Edge TTS (Microsoft Edge) para síntesis de voz gratuita.
-    No requiere API Key.
-    """
     def __init__(self, voice: str = "es-ES-AlvaroNeural"):
         self.voice = voice
 

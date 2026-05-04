@@ -16,3 +16,5 @@ openpyxl
 reportlab
 pdfkit
 Pillow
+bcrypt
+cryptography
