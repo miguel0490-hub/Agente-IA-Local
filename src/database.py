@@ -26,9 +26,14 @@ def init_db():
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        first_name TEXT NOT NULL,
+        last_name TEXT NOT NULL,
+        email TEXT UNIQUE NOT NULL,
         username TEXT UNIQUE NOT NULL,
         password_hash TEXT NOT NULL,
-        encrypted_api_keys TEXT
+        encrypted_api_keys TEXT,
+        is_verified INTEGER DEFAULT 0,
+        verification_token TEXT
     )
     ''')
     
@@ -58,34 +63,53 @@ def init_db():
 
 # --- Autenticación y Usuarios ---
 
-def register_user(username, password):
+def register_user(first_name, last_name, email, username, password):
+    import uuid
     conn = get_connection()
     cursor = conn.cursor()
     
-    # Hash password
     salt = bcrypt.gensalt()
     hashed = bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
+    token = uuid.uuid4().hex
     
     try:
-        cursor.execute("INSERT INTO users (username, password_hash, encrypted_api_keys) VALUES (?, ?, ?)", 
-                       (username, hashed, json.dumps({})))
+        cursor.execute("INSERT INTO users (first_name, last_name, email, username, password_hash, encrypted_api_keys, is_verified, verification_token) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", 
+                       (first_name, last_name, email, username, hashed, json.dumps({}), 0, token))
         conn.commit()
         user_id = cursor.lastrowid
-        return True, user_id
-    except sqlite3.IntegrityError:
+        return True, (user_id, token)
+    except sqlite3.IntegrityError as e:
+        if "email" in str(e).lower():
+            return False, "El correo electrónico ya está registrado."
         return False, "El nombre de usuario ya existe."
     finally:
         conn.close()
 
+def verify_user_token(token):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM users WHERE verification_token = ?", (token,))
+    row = cursor.fetchone()
+    
+    if row:
+        cursor.execute("UPDATE users SET is_verified = 1, verification_token = NULL WHERE id = ?", (row['id'],))
+        conn.commit()
+        conn.close()
+        return True
+    conn.close()
+    return False
+
 def verify_login(username, password):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, password_hash FROM users WHERE username = ?", (username,))
+    cursor.execute("SELECT id, password_hash, is_verified FROM users WHERE username = ?", (username,))
     row = cursor.fetchone()
     conn.close()
     
     if row:
         if bcrypt.checkpw(password.encode('utf-8'), row['password_hash'].encode('utf-8')):
+            if row['is_verified'] == 0:
+                return False, "Tu cuenta no está verificada. Por favor, revisa tu correo electrónico para activarla."
             return True, row['id']
     return False, "Usuario o contraseña incorrectos."
 
@@ -129,6 +153,22 @@ def create_chat(user_id, title="Nuevo Chat"):
     chat_id = cursor.lastrowid
     conn.close()
     return chat_id
+
+def delete_chat(chat_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM messages WHERE chat_id = ?", (chat_id,))
+    cursor.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
+    conn.commit()
+    conn.close()
+
+def update_chat_title(chat_id, new_title):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE chats SET title = ?, updated_at = ? WHERE id = ?", 
+                   (new_title, datetime.now(), chat_id))
+    conn.commit()
+    conn.close()
 
 def get_user_chats(user_id):
     conn = get_connection()

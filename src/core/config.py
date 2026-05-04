@@ -532,5 +532,147 @@ ESTILOS_CSS = f"""
             font-size: 2rem !important;
         }}
     }}
+    
+    /* Forzar color blanco en los títulos de los campos de texto (Labels) */
+    div[data-testid="stTextInput"] label p, 
+    div[data-testid="stPasswordInput"] label p {{ 
+        color: #F8FAFC !important; 
+        font-weight: 600 !important; 
+        font-size: 14px !important;
+    }}
+
+    /* Forzar fondo gris oscuro y texto blanco dentro de las cajas donde escribe el usuario */
+    div[data-testid="stTextInput"] input, 
+    div[data-testid="stPasswordInput"] input {{ 
+        color: #FFFFFF !important; 
+        background-color: #334155 !important; 
+        border: 1px solid #475569 !important; 
+        border-radius: 8px !important;
+    }}
+
+    /* ========================================================
+       UNIFICACIÓN GLOBAL DE BOTONES - ESTÉTICA PREMIUM
+       ======================================================== */
+
+    /* 1. BOTONES PRIMARIOS (Acciones principales: Enviar, Nuevo Chat, Guardar) */
+    /* Fondo Cian Eléctrico, bordes redondeados */
+    div[data-testid="stButton"] button[kind="primary"],
+    div[data-testid="stFormSubmitButton"] button,
+    div[data-testid="baseButton-primary"] button {{
+        background-color: #2FF3E0 !important;
+        border: none !important;
+        border-radius: 8px !important;
+        box-shadow: 0 4px 10px rgba(47, 243, 224, 0.2) !important;
+        transition: all 0.3s ease !important;
+    }}
+
+    /* FUERZA BRUTA: Todo el texto e iconos dentro del botón primario DEBE SER NEGRO */
+    div[data-testid="stButton"] button[kind="primary"] *,
+    div[data-testid="stFormSubmitButton"] button *,
+    div[data-testid="baseButton-primary"] button * {{
+        color: #000000 !important;
+        fill: #000000 !important;
+        font-weight: 800 !important;
+        font-size: 15px !important;
+    }}
+
+    /* Hover Primario */
+    div[data-testid="stButton"] button[kind="primary"]:hover,
+    div[data-testid="stFormSubmitButton"] button:hover {{
+        background-color: #1DD2C1 !important;
+        transform: translateY(-2px) !important;
+    }}
+
+
+    /* 2. BOTONES SECUNDARIOS (Acciones secundarias: Omitir, Cancelar, Opciones menores) */
+    /* Fondo transparente, borde gris oscuro */
+    div[data-testid="stButton"] button[kind="secondary"],
+    div[data-testid="baseButton-secondary"] button {{
+        background-color: transparent !important;
+        border: 1px solid #475569 !important;
+        border-radius: 8px !important;
+        transition: all 0.3s ease !important;
+    }}
+
+    /* FUERZA BRUTA: Todo el texto dentro del botón secundario DEBE SER CLARO para leerse en fondo oscuro */
+    div[data-testid="stButton"] button[kind="secondary"] *,
+    div[data-testid="baseButton-secondary"] button * {{
+        color: #F8FAFC !important; /* Blanco/Gris muy claro */
+        font-weight: 600 !important;
+    }}
+
+    /* Hover Secundario (Alerta visual sutil) */
+    div[data-testid="stButton"] button[kind="secondary"]:hover {{
+        border-color: #EF4444 !important; /* Borde Rojo */
+        background-color: rgba(239, 68, 68, 0.05) !important; /* Fondo rojo muy transparente */
+    }}
+    div[data-testid="stButton"] button[kind="secondary"]:hover * {{
+        color: #EF4444 !important; /* Texto Rojo */
+    }}
+
+    /* 3. CORRECCIÓN CRÍTICA: Caja de Texto del Chat (st.chat_input) -> Letras Visibles */
+    div[data-testid="stChatInput"] {{
+        background-color: #1E293B !important;
+        border: 1px solid #475569 !important;
+        border-radius: 12px !important;
+    }}
+    div[data-testid="stChatInput"] textarea {{
+        color: #FFFFFF !important; /* Texto que escribe el usuario en blanco */
+    }}
+    div[data-testid="stChatInput"] textarea::placeholder {{
+        color: #94A3B8 !important; /* Placeholder en gris claro */
+    }}
+    div[data-testid="stChatInput"] button {{
+        color: #2FF3E0 !important; /* Icono de enviar en cian */
+    }}
+
+    /* LA TARJETA (Aislamiento) */
+    div[data-testid="stTabs"] {{
+        background-color: #1E293B !important;
+        border-radius: 12px !important;
+        padding: 2rem !important;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.3) !important;
+    }}
+
+    /* PESTAÑAS INACTIVAS (Visibilidad) */
+    div[data-testid="stTabs"] button[aria-selected="false"] p {{
+        color: #94A3B8 !important; /* Gris claro visible */
+    }}
+
+    /* PLACEHOLDERS (Legibilidad) */
+    div[data-testid="stTextInput"] input::placeholder,
+    div[data-testid="stPasswordInput"] input::placeholder {{
+        color: #64748B !important; /* Slate 500 */
+    }}
+
+    /* Forzar texto blanco en los mensajes de chat */
+    div[data-testid="stChatMessage"] p, 
+    div[data-testid="stChatMessage"] span, 
+    div[data-testid="stChatMessage"] code {{
+        color: #FFFFFF !important;
+        font-size: 16px !important;
+        line-height: 1.6 !important;
+    }}
+
+    /* Asegurar que el fondo de la burbuja sea distinguible */
+    div[data-testid="stChatMessage"] {{
+        background-color: #1E293B !important;
+        border-radius: 10px !important;
+        margin-bottom: 10px !important;
+        border: 1px solid #334155 !important;
+    }}
+
+    /* Refuerzo total de legibilidad para respuestas de IA */
+    .stChatMessage, .stChatMessage div, .stChatMessage p, .stChatMessage li {{
+        color: #F8FAFC !important; /* Blanco hueso para evitar fatiga visual */
+        font-weight: 400 !important;
+        background-color: transparent !important;
+    }}
+
+    /* Resaltado de títulos dentro del chat */
+    .stChatMessage h1, .stChatMessage h2, .stChatMessage h3 {{
+        color: #2FF3E0 !important; /* Cian para encabezados de la IA */
+        margin-top: 10px !important;
+    }}
 </style>
 """

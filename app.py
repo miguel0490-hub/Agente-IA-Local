@@ -27,6 +27,10 @@ if "rol_activo" not in st.session_state:
     st.session_state.rol_activo = "Asistente General (Tech Lead)"
 if "motor_activo_idx" not in st.session_state:
     st.session_state.motor_activo_idx = 0
+if "onboarding_step" not in st.session_state:
+    st.session_state.onboarding_step = 0
+if "temp_keys" not in st.session_state:
+    st.session_state.temp_keys = {}
 
 # --- ESTILOS ---
 st.markdown(ESTILOS_CSS, unsafe_allow_html=True)
@@ -34,83 +38,202 @@ st.markdown(ESTILOS_CSS, unsafe_allow_html=True)
 if not os.path.exists(CARPETA_IMAGENES):
     os.makedirs(CARPETA_IMAGENES)
 
+# --- VERIFICACIÓN DE TOKEN EN URL ---
+if "token" in st.query_params:
+    from src.database import verify_user_token
+    token = st.query_params["token"]
+    if verify_user_token(token):
+        st.success("✅ Cuenta Premium verificada exitosamente. Ya puedes iniciar sesión.")
+    else:
+        st.error("❌ El token de verificación es inválido o la cuenta ya ha sido verificada.")
+    st.query_params.clear()
+
 # --- LOGIN Y REGISTRO ---
 if not st.session_state.user_id:
-    st.markdown("<h1 style='text-align: center; color: #00F2FE;'>⚡ SuperAgente IA Pro</h1>", unsafe_allow_html=True)
-    st.markdown("<h3 style='text-align: center; color: #A0AAB5;'>Acceso al Sistema</h3>", unsafe_allow_html=True)
-    
-    tab1, tab2 = st.tabs(["Iniciar Sesión", "Registrarse"])
-    
-    with tab1:
-        with st.form("login_form"):
-            username = st.text_input("Usuario")
-            password = st.text_input("Contraseña", type="password")
-            submitted = st.form_submit_button("Entrar", use_container_width=True)
-            if submitted:
-                if username and password:
-                    success, result = verify_login(username, password)
-                    if success:
-                        st.session_state.user_id = result
-                        # Cargar API keys
-                        keys = get_user_api_keys(result)
-                        st.session_state.api_keys = keys
-                        if keys:
-                            st.session_state.onboarding_done = True
-                        st.rerun()
+    col_left, central_col, col_right = st.columns([1, 2, 1])
+    with central_col:
+        st.markdown("<h1 style='text-align: center; color: #00F2FE;'>⚡ SuperAgente IA Pro</h1>", unsafe_allow_html=True)
+        st.markdown("<h3 style='text-align: center; color: #A0AAB5;'>Acceso al Sistema</h3>", unsafe_allow_html=True)
+        
+        tab1, tab2 = st.tabs(["Iniciar Sesión", "Registrarse"])
+        
+        with tab1:
+            with st.form("login_form"):
+                username = st.text_input("Usuario", placeholder="Tu usuario")
+                password = st.text_input("Contraseña", type="password")
+                submitted = st.form_submit_button("Entrar", use_container_width=True)
+                if submitted:
+                    if username and password:
+                        success, result = verify_login(username, password)
+                        if success:
+                            st.session_state.user_id = result
+                            # Cargar API keys
+                            keys = get_user_api_keys(result)
+                            st.session_state.api_keys = keys
+                            if keys:
+                                st.session_state.onboarding_done = True
+                            st.rerun()
+                        else:
+                            st.error(result)
                     else:
-                        st.error(result)
-                else:
-                    st.warning("Completa todos los campos.")
+                        st.warning("Completa todos los campos.")
+                        
+        with tab2:
+            with st.form("register_form"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    first_name = st.text_input("Nombre", placeholder="Ingresa tu nombre")
+                with col2:
+                    last_name = st.text_input("Apellidos", placeholder="Ingresa tus apellidos")
                     
-    with tab2:
-        with st.form("register_form"):
-            new_username = st.text_input("Nuevo Usuario")
-            new_password = st.text_input("Nueva Contraseña", type="password")
-            reg_submitted = st.form_submit_button("Crear Cuenta", use_container_width=True)
-            if reg_submitted:
-                if new_username and new_password:
-                    success, result = register_user(new_username, new_password)
-                    if success:
-                        st.success("Cuenta creada. Por favor, inicia sesión.")
+                email = st.text_input("Correo Electrónico", placeholder="ejemplo@correo.com")
+                new_username = st.text_input("Nuevo Usuario", placeholder="Elige un nombre de usuario")
+                new_password = st.text_input("Nueva Contraseña", type="password")
+                confirm_password = st.text_input("Confirmar Contraseña", type="password")
+                
+                reg_submitted = st.form_submit_button("Crear Cuenta Premium", use_container_width=True)
+                if reg_submitted:
+                    if not all([first_name, last_name, email, new_username, new_password, confirm_password]):
+                        st.error("Todos los campos son obligatorios.")
+                    elif new_password != confirm_password:
+                        st.error("Las contraseñas no coinciden.")
                     else:
-                        st.error(result)
-                else:
-                    st.warning("Completa todos los campos.")
+                        import re
+                        if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
+                            st.error("Por favor, introduce un correo electrónico válido.")
+                        else:
+                            success, result = register_user(first_name, last_name, email, new_username, new_password)
+                            if success:
+                                user_id, token = result
+                                from src.services.email_service import send_verification_email
+                                send_verification_email(email, first_name, token)
+                                st.success(f"¡Bienvenido/a {first_name}! Revisa tu bandeja de entrada (y Spam) para activar tu cuenta Premium.")
+                            else:
+                                st.error(result)
     st.stop()
 
 # --- ONBOARDING DE API KEYS ---
 if not st.session_state.onboarding_done:
-    st.markdown("<h2 style='text-align: center; color: #00F2FE;'>Configuración de Proveedores (Onboarding)</h2>", unsafe_allow_html=True)
-    st.info("Configura tus API Keys. Si omites alguna, las funciones asociadas quedarán deshabilitadas en tu cuenta.")
-    
-    with st.form("onboarding_form"):
-        gemini_key = st.text_input("Gemini API Key (Para razonamiento multimodal y arte)", type="password", help="Obténla en Google AI Studio")
-        groq_key = st.text_input("Groq API Key (Para transcripción STT Whisper y Llama 3)", type="password", help="Obténla en Groq Console")
-        openrouter_key = st.text_input("OpenRouter API Key", type="password", help="Obténla en OpenRouter")
-        hf_key = st.text_input("Hugging Face API Key", type="password", help="Obténla en Hugging Face Tokens")
-        openai_key = st.text_input("OpenAI API Key (Para TTS y DALL-E 3)", type="password", help="Obténla en platform.openai.com")
-        stability_key = st.text_input("Stability AI API Key", type="password", help="Obténla en platform.stability.ai")
+    col_left, central_col, col_right = st.columns([1, 2, 1])
+    with central_col:
+        st.markdown("<h2 style='text-align: center; color: #00F2FE;'>Configuración de Proveedores</h2>", unsafe_allow_html=True)
         
-        submitted = st.form_submit_button("Guardar y Continuar", use_container_width=True)
-        if submitted:
-            keys = {}
-            if gemini_key: keys["GEMINI_API_KEY"] = gemini_key
-            if groq_key: keys["GROQ_API_KEY"] = groq_key
-            if openrouter_key: keys["OPENROUTER_API_KEY"] = openrouter_key
-            if hf_key: keys["HF_API_KEY"] = hf_key
-            if openai_key: keys["OPENAI_API_KEY"] = openai_key
-            if stability_key: keys["STABILITY_API_KEY"] = stability_key
-            
-            update_api_keys(st.session_state.user_id, keys)
-            st.session_state.api_keys = keys
+        step = st.session_state.onboarding_step
+        
+        if step < 6:
+            st.progress((step) / 6.0)
+            st.caption(f"Paso {step + 1} de 6")
+        
+        if step == 0:
+            st.markdown("### Paso 1: Configurar Gemini")
+            st.markdown("Motor principal para razonamiento, visión y agentes complejos. [Obtener mi API Key aquí](https://aistudio.google.com/app/apikey)")
+            key = st.text_input("Gemini API Key", type="password", key="gemini_input")
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("Guardar y Siguiente", type="primary", key="gemini_save", use_container_width=True):
+                    st.session_state.temp_keys["GEMINI_API_KEY"] = key
+                    st.session_state.onboarding_step += 1
+                    st.rerun()
+            with c2:
+                if st.button("Omitir esta IA", type="secondary", key="gemini_skip", use_container_width=True):
+                    st.session_state.temp_keys["GEMINI_API_KEY"] = ""
+                    st.toast("Has omitido Gemini. Las funciones de agente y visión estarán desactivadas.", icon="⚠️")
+                    st.session_state.onboarding_step += 1
+                    st.rerun()
+        
+        elif step == 1:
+            st.markdown("### Paso 2: Configurar Groq")
+            st.markdown("Motor ultrarrápido para transcripción STT (Whisper) y Llama 3. [Obtener mi API Key aquí](https://console.groq.com/keys)")
+            key = st.text_input("Groq API Key", type="password", key="groq_input")
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("Guardar y Siguiente", type="primary", key="groq_save", use_container_width=True):
+                    st.session_state.temp_keys["GROQ_API_KEY"] = key
+                    st.session_state.onboarding_step += 1
+                    st.rerun()
+            with c2:
+                if st.button("Omitir esta IA", type="secondary", key="groq_skip", use_container_width=True):
+                    st.session_state.temp_keys["GROQ_API_KEY"] = ""
+                    st.toast("Has omitido Groq. Transcripción y Llama 3 no estarán disponibles.", icon="⚠️")
+                    st.session_state.onboarding_step += 1
+                    st.rerun()
+                    
+        elif step == 2:
+            st.markdown("### Paso 3: Configurar OpenRouter")
+            st.markdown("Acceso a múltiples modelos potentes (Claude, Mistral, etc). [Obtener mi API Key aquí](https://openrouter.ai/keys)")
+            key = st.text_input("OpenRouter API Key", type="password", key="or_input")
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("Guardar y Siguiente", type="primary", key="or_save", use_container_width=True):
+                    st.session_state.temp_keys["OPENROUTER_API_KEY"] = key
+                    st.session_state.onboarding_step += 1
+                    st.rerun()
+            with c2:
+                if st.button("Omitir esta IA", type="secondary", key="or_skip", use_container_width=True):
+                    st.session_state.temp_keys["OPENROUTER_API_KEY"] = ""
+                    st.toast("Has omitido OpenRouter. Los modelos de terceros no estarán disponibles.", icon="⚠️")
+                    st.session_state.onboarding_step += 1
+                    st.rerun()
+
+        elif step == 3:
+            st.markdown("### Paso 4: Configurar Hugging Face")
+            st.markdown("Integración con modelos open-source de Hugging Face. [Obtener mi API Key aquí](https://huggingface.co/settings/tokens)")
+            key = st.text_input("Hugging Face API Key", type="password", key="hf_input")
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("Guardar y Siguiente", type="primary", key="hf_save", use_container_width=True):
+                    st.session_state.temp_keys["HF_API_KEY"] = key
+                    st.session_state.onboarding_step += 1
+                    st.rerun()
+            with c2:
+                if st.button("Omitir esta IA", type="secondary", key="hf_skip", use_container_width=True):
+                    st.session_state.temp_keys["HF_API_KEY"] = ""
+                    st.toast("Has omitido Hugging Face.", icon="⚠️")
+                    st.session_state.onboarding_step += 1
+                    st.rerun()
+
+        elif step == 4:
+            st.markdown("### Paso 5: Configurar OpenAI")
+            st.markdown("Necesario para generación de voz (TTS) y DALL-E 3. [Obtener mi API Key aquí](https://platform.openai.com/api-keys)")
+            key = st.text_input("OpenAI API Key", type="password", key="oai_input")
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("Guardar y Siguiente", type="primary", key="oai_save", use_container_width=True):
+                    st.session_state.temp_keys["OPENAI_API_KEY"] = key
+                    st.session_state.onboarding_step += 1
+                    st.rerun()
+            with c2:
+                if st.button("Omitir esta IA", type="secondary", key="oai_skip", use_container_width=True):
+                    st.session_state.temp_keys["OPENAI_API_KEY"] = ""
+                    st.toast("Has omitido OpenAI. Generación de voz y DALL-E 3 estarán inactivos.", icon="⚠️")
+                    st.session_state.onboarding_step += 1
+                    st.rerun()
+
+        elif step == 5:
+            st.markdown("### Paso 6: Configurar Stability AI")
+            st.markdown("Generación de imágenes de alta resolución (SD3). [Obtener mi API Key aquí](https://platform.stability.ai/account/keys)")
+            key = st.text_input("Stability AI API Key", type="password", key="stab_input")
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("Guardar y Finalizar", type="primary", key="stab_save", use_container_width=True):
+                    st.session_state.temp_keys["STABILITY_API_KEY"] = key
+                    st.session_state.onboarding_step += 1
+                    st.rerun()
+            with c2:
+                if st.button("Omitir y Finalizar", type="secondary", key="stab_skip", use_container_width=True):
+                    st.session_state.temp_keys["STABILITY_API_KEY"] = ""
+                    st.toast("Has omitido Stability AI. Generación SD3 inactiva.", icon="⚠️")
+                    st.session_state.onboarding_step += 1
+                    st.rerun()
+
+        elif step == 6:
+            final_keys = {k: v for k, v in st.session_state.temp_keys.items() if v}
+            update_api_keys(st.session_state.user_id, final_keys)
+            st.session_state.api_keys = final_keys
             st.session_state.onboarding_done = True
+            st.success("¡Onboarding completado! Tu entorno está listo.")
             st.rerun()
             
-    if st.button("Omitir Onboarding (No recomendado)"):
-        st.warning("Has omitido la configuración. No podrás usar modelos a menos que configures tus claves más tarde.")
-        st.session_state.onboarding_done = True
-        st.rerun()
-        
     st.stop()
 
 
@@ -155,8 +278,10 @@ with st.sidebar:
         st.rerun()
         
     chats = get_user_chats(st.session_state.user_id)
-    if chats:
-        opciones_chat = {c['id']: c['title'] for c in chats}
+    st.session_state.chat_list = chats
+    
+    if st.session_state.chat_list:
+        opciones_chat = {c['id']: c['title'] for c in st.session_state.chat_list}
         
         if not st.session_state.chat_id and opciones_chat:
             st.session_state.chat_id = list(opciones_chat.keys())[0]
@@ -523,10 +648,19 @@ with st.sidebar:
     st.divider()
 
     st.markdown('<div class="danger-btn">', unsafe_allow_html=True)
-    if st.button("🗑️ Eliminar historial actual", use_container_width=True, key="btn_borrar_memoria"):
-        limpiar_memoria(st.session_state.chat_id)
-        st.session_state.messages = []
-        st.rerun()
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("🧹 Limpiar mensajes", use_container_width=True, key="btn_borrar_memoria"):
+            limpiar_memoria(st.session_state.chat_id)
+            st.session_state.messages = []
+            st.rerun()
+    with c2:
+        if st.button("🗑️ Borrar este Chat", use_container_width=True, key="btn_eliminar_chat"):
+            from src.database import delete_chat
+            delete_chat(st.session_state.chat_id)
+            st.session_state.chat_id = None
+            st.session_state.messages = []
+            st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
 
 
@@ -548,6 +682,20 @@ for msg in st.session_state.messages:
 
 if prompt := st.chat_input("Escribe tu consulta o pídele que genere una imagen..."):
     
+    # --- AUTO-RENOMBRADO DE CHAT ---
+    renamed = False
+    from src.database import get_user_chats, update_chat_title
+    chats_actuales = get_user_chats(st.session_state.user_id)
+    chat_actual = next((c for c in chats_actuales if c['id'] == st.session_state.chat_id), None)
+    
+    if chat_actual and chat_actual['title'] in ["Nuevo Chat", "New Chat"]:
+        new_title = prompt[:30] + ("..." if len(prompt) > 30 else "")
+        update_chat_title(st.session_state.chat_id, new_title)
+        
+        # Refrescar la lista en session_state para el sidebar
+        st.session_state.chat_list = get_user_chats(st.session_state.user_id)
+        renamed = True
+
     es_comando_imagen, prompt_artistico = parse_intent(prompt)
 
     MOTORES_HERRAMIENTA = {
@@ -807,3 +955,6 @@ if prompt := st.chat_input("Escribe tu consulta o pídele que genere una imagen.
         
         st.session_state.messages.append({"role": "assistant", "content": clean_res, "file_paths": file_paths})
         guardar_memoria(st.session_state.chat_id, st.session_state.messages, st.session_state.api_keys)
+
+    if renamed:
+        st.rerun()
