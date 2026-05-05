@@ -165,6 +165,56 @@ class OpenRouterProvider(LLMProvider):
             yield f"\n\n❌ Error OpenRouter: {e}"
 
 
+class CustomOpenAIProvider(LLMProvider):
+    """
+    Proveedor genérico para cualquier endpoint compatible con la API de OpenAI
+    (DeepSeek, LM Studio, vLLM, Mistral AI, Together AI, etc.).
+
+    CRÍTICO: El system_instruction se inyecta SIEMPRE como el primer mensaje
+    con rol 'system', garantizando que el modelo reciba las instrucciones de
+    uso de herramientas (Tool Calling vía JSON Parsing) igual que los
+    proveedores nativos.
+    """
+
+    def __init__(self, base_url: str, api_key: str, model_name: str):
+        super().__init__(api_key=api_key)
+        self.base_url = base_url.rstrip("/")
+        self.model_name = model_name
+
+    def stream_chat(self, mensaje: str, historial: list, system_instruction: str = None):
+        if not self.api_key:
+            yield f"❌ No se configuró API Key para el modelo personalizado '{self.model_name}'."
+            return
+        if not self.base_url:
+            yield f"❌ No se configuró URL Base para el modelo personalizado '{self.model_name}'."
+            return
+
+        try:
+            cliente = OpenAI(
+                api_key=self.api_key,
+                base_url=self.base_url,
+            )
+            # El system prompt es el primero — esto es lo que activa el tool calling
+            mensajes = [{"role": "system", "content": system_instruction or PROMPT_TECH_LEAD}]
+            for m in historial:
+                if m.get("content"):
+                    mensajes.append({"role": m["role"], "content": m["content"]})
+            mensajes.append({"role": "user", "content": mensaje})
+
+            stream = cliente.chat.completions.create(
+                model=self.model_name,
+                messages=mensajes,
+                stream=True,
+                temperature=0.2,
+            )
+            for chunk in stream:
+                delta_content = chunk.choices[0].delta.content
+                if delta_content:
+                    yield delta_content
+        except Exception as e:
+            yield f"\n\n❌ Error en modelo personalizado '{self.model_name}': {e}"
+
+
 class GroqWhisperProvider:
     def __init__(self, api_key=None):
         self.api_key = api_key

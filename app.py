@@ -46,6 +46,8 @@ if "temp_keys" not in st.session_state:
     st.session_state.temp_keys = {}
 if "auto_close_sidebar" not in st.session_state:
     st.session_state.auto_close_sidebar = False
+if "temp_custom_models" not in st.session_state:
+    st.session_state.temp_custom_models = []
 
 # --- ESTILOS ---
 st.markdown(ESTILOS_CSS, unsafe_allow_html=True)
@@ -201,9 +203,9 @@ if not st.session_state.onboarding_done:
         
         step = st.session_state.onboarding_step
         
-        if step < 6:
-            st.progress((step) / 6.0)
-            st.caption(f"Paso {step + 1} de 6")
+        if step < 7:
+            st.progress(step / 7.0)
+            st.caption(f"Paso {step + 1} de 7")
         
         if step == 0:
             st.markdown("### Paso 1: Configurar Gemini")
@@ -296,18 +298,74 @@ if not st.session_state.onboarding_done:
             key = st.text_input("Stability AI API Key", type="password", key="stab_input")
             c1, c2 = st.columns(2)
             with c1:
-                if st.button("Guardar y Finalizar", type="primary", key="stab_save", use_container_width=True):
+                if st.button("Guardar y Siguiente", type="primary", key="stab_save", use_container_width=True):
                     st.session_state.temp_keys["STABILITY_API_KEY"] = key
                     st.session_state.onboarding_step += 1
                     st.rerun()
             with c2:
-                if st.button("Omitir y Finalizar", type="secondary", key="stab_skip", use_container_width=True):
+                if st.button("Omitir", type="secondary", key="stab_skip", use_container_width=True):
                     st.session_state.temp_keys["STABILITY_API_KEY"] = ""
                     st.toast("Has omitido Stability AI. Generación SD3 inactiva.", icon="⚠️")
                     st.session_state.onboarding_step += 1
                     st.rerun()
 
         elif step == 6:
+            st.markdown("### Paso 7: Añadir IA Personalizada (Opcional)")
+            st.markdown(
+                "Conecta cualquier IA con una API compatible con OpenAI — "
+                "DeepSeek, Mistral, Together AI, LM Studio, vLLM, etc.\n\n"
+                "Todos los modelos que añadas heredarán el System Prompt completo "
+                "y podrán usar herramientas (crear archivos, buscar en web, ejecutar código)."
+            )
+
+            # --- Modelos ya añadidos en esta sesión ---
+            if st.session_state.temp_custom_models:
+                st.markdown("**Modelos registrados en este onboarding:**")
+                for cm in st.session_state.temp_custom_models:
+                    st.success(f"✅ {cm['name']} — `{cm['model_id']}` en `{cm['base_url']}`")
+                st.divider()
+
+            # --- Formulario para añadir un nuevo modelo ---
+            with st.form("custom_model_form", clear_on_submit=True):
+                cm_name = st.text_input(
+                    "Nombre en el menú",
+                    placeholder="Ej: Mi DeepSeek Coder",
+                    key="cm_name_input"
+                )
+                cm_url = st.text_input(
+                    "URL Base del Endpoint",
+                    placeholder="Ej: https://api.deepseek.com/v1",
+                    key="cm_url_input"
+                )
+                cm_key = st.text_input(
+                    "API Key del proveedor",
+                    type="password",
+                    key="cm_key_input"
+                )
+                cm_model = st.text_input(
+                    "ID del Modelo",
+                    placeholder="Ej: deepseek-chat",
+                    key="cm_model_input"
+                )
+                if st.form_submit_button("➕ Guardar este Modelo", use_container_width=True):
+                    if cm_name and cm_url and cm_key and cm_model:
+                        st.session_state.temp_custom_models.append({
+                            "name":     cm_name.strip(),
+                            "base_url": cm_url.strip(),
+                            "api_key":  cm_key.strip(),
+                            "model_id": cm_model.strip(),
+                        })
+                        st.toast(f"✅ '{cm_name}' guardado. Añade otro o finaliza.", icon="⚙️")
+                        st.rerun()
+                    else:
+                        st.warning("⚠️ Completa todos los campos antes de guardar el modelo.")
+
+            if st.button("✅ Finalizar Onboarding", type="primary", key="finish_onboarding", use_container_width=True):
+                st.session_state.temp_keys["CUSTOM_MODELS"] = st.session_state.temp_custom_models
+                st.session_state.onboarding_step += 1
+                st.rerun()
+
+        elif step == 7:
             final_keys = {k: v for k, v in st.session_state.temp_keys.items() if v}
             update_api_keys(st.session_state.user_id, final_keys)
             st.session_state.api_keys = final_keys
@@ -558,6 +616,7 @@ with st.sidebar:
     st.divider()
 
     st.markdown("**⚙️ Motor Activo**")
+    # Motores base del sistema
     motores_disponibles = [
         "Groq Llama 3.3 (Lead Software Engineer / Creador)",
         "Gemini 2.5 Pro (Análisis Multimedia y Arte)",
@@ -566,6 +625,10 @@ with st.sidebar:
         "OpenAI TTS (Voz: Text-to-Speech)",
         "Generador de Assets (Manos: Texto a Imagen)",
     ]
+    # Inyección dinámica de modelos personalizados registrados por el usuario
+    _custom_models_list = st.session_state.api_keys.get("CUSTOM_MODELS", [])
+    for _cm in _custom_models_list:
+        motores_disponibles.append(f"🤖 {_cm['name']}")
     if motor_forzado:
         motor = motor_forzado
         st.selectbox("Cerebro Activo:", [motor_forzado], index=0, disabled=True, key="motor_manual_selector")
@@ -930,8 +993,23 @@ if prompt := st.chat_input("Escribe tu consulta o pídele que genere una imagen.
                 if imagen_adjunta: st.warning("⚠️ Este motor ignora imágenes locales.")
                 provider = get_groq_provider()
             else:
-                if imagen_adjunta: st.warning("⚠️ Ollama ignora imágenes locales.")
-                provider = get_ollama_provider()
+                # Detectar si el motor seleccionado es un modelo personalizado
+                _custom_models_cfg = st.session_state.api_keys.get("CUSTOM_MODELS", [])
+                _matched_custom = next(
+                    (cm for cm in _custom_models_cfg if f"🤖 {cm['name']}" == motor),
+                    None
+                )
+                if _matched_custom:
+                    if imagen_adjunta: st.warning("⚠️ Los modelos personalizados ignoran imágenes locales.")
+                    from src.services.llm_provider import CustomOpenAIProvider
+                    provider = CustomOpenAIProvider(
+                        base_url=_matched_custom["base_url"],
+                        api_key=_matched_custom["api_key"],
+                        model_name=_matched_custom["model_id"],
+                    )
+                else:
+                    if imagen_adjunta: st.warning("⚠️ Ollama ignora imágenes locales.")
+                    provider = get_ollama_provider()
 
             clean_res = ""
             file_paths = []
