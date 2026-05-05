@@ -403,53 +403,8 @@ def get_edge_tts_provider(voice):
     return EdgeTTSProvider(voice=voice)
 
 
-# --- CONFIGURACIÓN DE CHATS EN SIDEBAR ---
-with st.sidebar:
-    st.header("💬 Mis Chats")
-    
-    if st.button("➕ Nuevo Chat", use_container_width=True):
-        nuevo_id = create_chat(st.session_state.user_id, "Nuevo Chat")
-        st.session_state.chat_id = nuevo_id
-        st.session_state.messages = []
-        st.rerun()
-        
-    chats = get_user_chats(st.session_state.user_id)
-    st.session_state.chat_list = chats
-    
-    if st.session_state.chat_list:
-        opciones_chat = {c['id']: c['title'] for c in st.session_state.chat_list}
-        
-        if not st.session_state.chat_id and opciones_chat:
-            st.session_state.chat_id = list(opciones_chat.keys())[0]
-            st.session_state.messages = cargar_memoria(st.session_state.chat_id)
-            
-        chat_seleccionado = st.selectbox(
-            "Seleccionar chat:", 
-            options=list(opciones_chat.keys()), 
-            format_func=lambda x: opciones_chat[x],
-            index=list(opciones_chat.keys()).index(st.session_state.chat_id) if st.session_state.chat_id in opciones_chat else 0
-        )
-        
-        if chat_seleccionado != st.session_state.chat_id:
-            st.session_state.chat_id = chat_seleccionado
-            st.session_state.messages = cargar_memoria(st.session_state.chat_id)
-            st.session_state.auto_close_sidebar = True
-            st.rerun()
-    else:
-        st.info("No tienes chats.")
-        if not st.session_state.chat_id:
-            nuevo_id = create_chat(st.session_state.user_id, "Nuevo Chat")
-            st.session_state.chat_id = nuevo_id
-            st.session_state.messages = []
-            st.rerun()
-
-    st.divider()
-    if st.button("⚙️ Centro de Control", use_container_width=True, key="btn_control_center"):
-        panel_ajustes()
-    st.divider()
-
-
 # --- CENTRO DE CONTROL (Dialog Premium) ---
+# DEBE definirse ANTES del bloque with st.sidebar: para evitar NameError.
 @st.dialog("⚙️ Centro de Control")
 def panel_ajustes():
     """
@@ -540,7 +495,7 @@ def panel_ajustes():
 
             if st.form_submit_button("💾 Guardar Cambios", type="primary", use_container_width=True):
                 updated_keys = {
-                    **keys,  # preserva CUSTOM_MODELS y cualquier otro campo no listado aquí
+                    **keys,
                     "GEMINI_API_KEY":     new_gemini or keys.get("GEMINI_API_KEY", ""),
                     "GROQ_API_KEY":       new_groq   or keys.get("GROQ_API_KEY", ""),
                     "OPENROUTER_API_KEY": new_or     or keys.get("OPENROUTER_API_KEY", ""),
@@ -566,15 +521,60 @@ def panel_ajustes():
         """)
         st.divider()
         st.markdown('<div class="danger-btn">', unsafe_allow_html=True)
-        if st.button("🚪 Cerrar Sesión Segura", use_container_width=True, key="logout_btn"):
+        if st.button("🚶 Cerrar Sesión Segura", use_container_width=True, key="logout_btn"):
             cookie_manager.delete("auth_token")
             from src.database import clear_remember_token
             clear_remember_token(st.session_state.user_id)
-            # Limpiar TODA la sesión en memoria — el usuario vuelve al login
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
+
+
+# --- CONFIGURACIÓN DE CHATS EN SIDEBAR ---
+with st.sidebar:
+    st.header("💬 Mis Chats")
+    
+    if st.button("➕ Nuevo Chat", use_container_width=True):
+        nuevo_id = create_chat(st.session_state.user_id, "Nuevo Chat")
+        st.session_state.chat_id = nuevo_id
+        st.session_state.messages = []
+        st.rerun()
+        
+    chats = get_user_chats(st.session_state.user_id)
+    st.session_state.chat_list = chats
+    
+    if st.session_state.chat_list:
+        opciones_chat = {c['id']: c['title'] for c in st.session_state.chat_list}
+        
+        if not st.session_state.chat_id and opciones_chat:
+            st.session_state.chat_id = list(opciones_chat.keys())[0]
+            st.session_state.messages = cargar_memoria(st.session_state.chat_id)
+            
+        chat_seleccionado = st.selectbox(
+            "Seleccionar chat:", 
+            options=list(opciones_chat.keys()), 
+            format_func=lambda x: opciones_chat[x],
+            index=list(opciones_chat.keys()).index(st.session_state.chat_id) if st.session_state.chat_id in opciones_chat else 0
+        )
+        
+        if chat_seleccionado != st.session_state.chat_id:
+            st.session_state.chat_id = chat_seleccionado
+            st.session_state.messages = cargar_memoria(st.session_state.chat_id)
+            st.session_state.auto_close_sidebar = True
+            st.rerun()
+    else:
+        st.info("No tienes chats.")
+        if not st.session_state.chat_id:
+            nuevo_id = create_chat(st.session_state.user_id, "Nuevo Chat")
+            st.session_state.chat_id = nuevo_id
+            st.session_state.messages = []
+            st.rerun()
+
+    st.divider()
+    if st.button("⚙️ Centro de Control", use_container_width=True, key="btn_control_center"):
+        panel_ajustes()
+    st.divider()
 
 
 def get_roles():
