@@ -5,12 +5,25 @@ import json
 
 st.set_page_config(page_title="SuperAgente IA Pro", page_icon="⚡", layout="wide", initial_sidebar_state="expanded")
 
-from src.database import register_user, verify_login, update_api_keys, get_user_api_keys, create_chat, get_user_chats, delete_chat
+from src.database import (
+    register_user, verify_login, update_api_keys, get_user_api_keys,
+    create_chat, get_user_chats, delete_chat,
+    update_remember_token, clear_remember_token, verify_remember_token,
+)
 from src.services.memory_service import cargar_memoria, guardar_memoria, limpiar_memoria
 from src.core.config import PAGE_TITLE, PAGE_ICON, LAYOUT, CARPETA_IMAGENES, PROMPT_TECH_LEAD, PROMPT_APP_BUILDER, PROMPT_UI_DESIGNER, ESTILOS_CSS
 from PIL import Image
 from src.core.intent_parser import parse_intent
 from src.core.ui_helpers import render_download_button
+import extra_streamlit_components as stx
+
+# CookieManager en caché para que no se reinstancie en cada interacción de Streamlit.
+# experimental_allow_widgets=True es requerido por extra-streamlit-components.
+@st.cache_resource(experimental_allow_widgets=True)
+def get_cookie_manager():
+    return stx.CookieManager(key="global_cookie_manager")
+
+cookie_manager = get_cookie_manager()
 
 # --- INICIALIZACIÓN DE ESTADO ---
 if "user_id" not in st.session_state:
@@ -39,6 +52,20 @@ st.markdown(ESTILOS_CSS, unsafe_allow_html=True)
 
 if not os.path.exists(CARPETA_IMAGENES):
     os.makedirs(CARPETA_IMAGENES)
+
+# --- AUTO-LOGIN POR COOKIE (Remember Me) ---
+# Se ejecuta antes del bloque de login para restaurar la sesión sin interacción del usuario.
+if not st.session_state.user_id:
+    _auth_cookie = cookie_manager.get("auth_token")
+    if _auth_cookie:
+        _remembered_user_id = verify_remember_token(_auth_cookie)
+        if _remembered_user_id:
+            st.session_state.user_id = _remembered_user_id
+            _keys = get_user_api_keys(_remembered_user_id)
+            st.session_state.api_keys = _keys
+            if _keys:
+                st.session_state.onboarding_done = True
+            st.rerun()
 
 # --- VERIFICACIÓN DE TOKEN EN URL ---
 if "token" in st.query_params:
@@ -85,6 +112,7 @@ if not st.session_state.user_id:
             with st.form("login_form"):
                 username = st.text_input("Usuario", placeholder="Tu usuario")
                 password = st.text_input("Contraseña", type="password")
+                remember_me = st.checkbox("🔒 Recuérdame en este dispositivo", value=False)
                 submitted = st.form_submit_button("Entrar", use_container_width=True)
                 if submitted:
                     if username and password:
@@ -96,6 +124,20 @@ if not st.session_state.user_id:
                             st.session_state.api_keys = keys
                             if keys:
                                 st.session_state.onboarding_done = True
+                            # --- Gestión de Cookie Remember Me ---
+                            if remember_me:
+                                import uuid
+                                _token = uuid.uuid4().hex
+                                update_remember_token(result, _token)
+                                # max_age en segundos: 30 días
+                                cookie_manager.set(
+                                    "auth_token", _token,
+                                    max_age=30 * 24 * 60 * 60
+                                )
+                            else:
+                                # Limpia cualquier cookie previa si el usuario no quiere persistencia
+                                cookie_manager.delete("auth_token")
+                                clear_remember_token(result)
                             st.rerun()
                         else:
                             st.error(result)

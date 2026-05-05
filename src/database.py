@@ -12,6 +12,8 @@ def get_connection():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    # Garantiza que SQLite respete los borrados en cascada definidos en el esquema.
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 def get_cipher():
@@ -58,11 +60,17 @@ def init_db():
     )
     ''')
     
-    try:
-        cursor.execute('ALTER TABLE users ADD COLUMN reset_token TEXT')
-    except Exception:
-        pass
-        
+    # Migraciones seguras de columnas opcionales (idempotentes)
+    migrations = [
+        'ALTER TABLE users ADD COLUMN reset_token TEXT',
+        'ALTER TABLE users ADD COLUMN remember_token TEXT',
+    ]
+    for migration in migrations:
+        try:
+            cursor.execute(migration)
+        except Exception:
+            pass  # La columna ya existe — comportamiento esperado
+
     conn.commit()
     conn.close()
 
@@ -120,18 +128,12 @@ def verify_login(username, password):
 
 def update_api_keys(user_id, api_keys_dict):
     cipher = get_cipher()
-    # Serializar a string JSON y luego encriptar
     json_str = json.dumps(api_keys_dict)
     encrypted = cipher.encrypt(json_str.encode('utf-8')).decode('utf-8')
-    
+
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("UPDATE users SET encrypted_api_keys = ? WHERE id = ?", (encrypted, user_id))
-    try:
-        cursor.execute('ALTER TABLE users ADD COLUMN reset_token TEXT')
-    except Exception:
-        pass
-        
     conn.commit()
     conn.close()
 
@@ -165,28 +167,21 @@ def create_chat(user_id, title="Nuevo Chat"):
     return chat_id
 
 def delete_chat(chat_id):
+    """Elimina un chat y todos sus mensajes en cascada."""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM messages WHERE chat_id = ?", (chat_id,))
     cursor.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
-    try:
-        cursor.execute('ALTER TABLE users ADD COLUMN reset_token TEXT')
-    except Exception:
-        pass
-        
     conn.commit()
     conn.close()
 
 def update_chat_title(chat_id, new_title):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("UPDATE chats SET title = ?, updated_at = ? WHERE id = ?", 
-                   (new_title, datetime.now(), chat_id))
-    try:
-        cursor.execute('ALTER TABLE users ADD COLUMN reset_token TEXT')
-    except Exception:
-        pass
-        
+    cursor.execute(
+        "UPDATE chats SET title = ?, updated_at = ? WHERE id = ?",
+        (new_title, datetime.now(), chat_id)
+    )
     conn.commit()
     conn.close()
 
@@ -237,25 +232,43 @@ def save_chat_messages(chat_id, messages):
                        (chat_id, role, content, extra_json))
                        
     cursor.execute("UPDATE chats SET updated_at = ? WHERE id = ?", (datetime.now(), chat_id))
-    try:
-        cursor.execute('ALTER TABLE users ADD COLUMN reset_token TEXT')
-    except Exception:
-        pass
-        
     conn.commit()
     conn.close()
 
-def delete_chat(chat_id):
+# NOTA: delete_chat está definida arriba (línea ~167) con borrado en cascada correcto.
+# Esta segunda definición fue eliminada para evitar la sobrescritura silenciosa.
+
+# --- Remember Me (Token de Sesión Persistente) ---
+
+def update_remember_token(user_id: int, token: str) -> None:
+    """Persiste el token de 'Recuérdame' para el usuario dado."""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
-    try:
-        cursor.execute('ALTER TABLE users ADD COLUMN reset_token TEXT')
-    except Exception:
-        pass
-        
+    cursor.execute("UPDATE users SET remember_token = ? WHERE id = ?", (token, user_id))
     conn.commit()
     conn.close()
+
+def clear_remember_token(user_id: int) -> None:
+    """Elimina el token persistente del usuario (logout o cambio de dispositivo)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET remember_token = NULL WHERE id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+
+def verify_remember_token(token: str) -> int | None:
+    """
+    Verifica el token de sesión persistente.
+    Retorna el user_id si el token existe y es válido, None en caso contrario.
+    """
+    if not token:
+        return None
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM users WHERE remember_token = ?", (token,))
+    row = cursor.fetchone()
+    conn.close()
+    return row['id'] if row else None
 
 # Inicializar DB al importar
 init_db()

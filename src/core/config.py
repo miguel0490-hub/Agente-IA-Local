@@ -1,18 +1,22 @@
 import os
-from dotenv import load_dotenv, set_key
+from dotenv import load_dotenv
 
 load_dotenv()
 
 APP_SECRET_KEY = os.getenv("APP_SECRET_KEY")
 if not APP_SECRET_KEY:
-    try:
-        from cryptography.fernet import Fernet
-        APP_SECRET_KEY = Fernet.generate_key().decode()
-        env_path = os.path.join(os.getcwd(), ".env")
-        set_key(env_path, "APP_SECRET_KEY", APP_SECRET_KEY)
-        os.environ["APP_SECRET_KEY"] = APP_SECRET_KEY
-    except ImportError:
-        print("Advertencia: cryptography no está instalado. No se generó APP_SECRET_KEY.")
+    # FALLO CRÍTICO DE CONFIGURACIÓN:
+    # APP_SECRET_KEY es requerida para encriptar/desencriptar las API keys de los usuarios.
+    # No se intenta generarla ni escribirla en disco para no mutar el sistema de archivos
+    # del servidor (comportamiento prohibido en entornos cloud como Streamlit Community Cloud).
+    #
+    # SOLUCIÓN: Añade APP_SECRET_KEY a tus Secrets de Streamlit Cloud o al archivo .env local.
+    # Genera una clave válida con: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    raise RuntimeError(
+        "[CONFIG ERROR] La variable de entorno APP_SECRET_KEY no está configurada. "
+        "Genera una clave Fernet y añádela a tus Secrets (Streamlit Cloud) o al archivo .env local. "
+        "Comando: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+    )
 
 # Configuración General
 PAGE_TITLE = "SuperAgente IA Pro"
