@@ -678,5 +678,13 @@ ESTILOS_CSS = f"""
         color: #2FF3E0 !important; /* Cian para encabezados de la IA */
         margin-top: 10px !important;
     }}
+
+    /* Forzar texto blanco en Checkboxes (Ej: "Recuérdame en este dispositivo") */
+    div[data-testid="stCheckbox"] label p,
+    div[data-testid="stCheckbox"] label span {{
+        color: {Colors.TEXT_MAIN} !important;
+        font-weight: 500 !important;
+        font-size: 14px !important;
+    }}
 </style>
 """

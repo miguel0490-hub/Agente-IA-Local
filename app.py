@@ -17,13 +17,10 @@ from src.core.intent_parser import parse_intent
 from src.core.ui_helpers import render_download_button
 import extra_streamlit_components as stx
 
-# CookieManager en caché para que no se reinstancie en cada interacción de Streamlit.
-# experimental_allow_widgets=True es requerido por extra-streamlit-components.
-@st.cache_resource(experimental_allow_widgets=True)
-def get_cookie_manager():
-    return stx.CookieManager(key="global_cookie_manager")
-
-cookie_manager = get_cookie_manager()
+# CookieManager en session_state para evitar CachedWidgetWarning en Streamlit moderno.
+if "cookie_manager" not in st.session_state:
+    st.session_state.cookie_manager = stx.CookieManager(key="global_cookie_manager")
+cookie_manager = st.session_state.cookie_manager
 
 # --- INICIALIZACIÓN DE ESTADO ---
 if "user_id" not in st.session_state:
@@ -447,9 +444,139 @@ with st.sidebar:
             st.rerun()
 
     st.divider()
+    if st.button("⚙️ Centro de Control", use_container_width=True, key="btn_control_center"):
+        panel_ajustes()
+    st.divider()
 
 
-# Mapa de Roles
+# --- CENTRO DE CONTROL (Dialog Premium) ---
+@st.dialog("⚙️ Centro de Control")
+def panel_ajustes():
+    """
+    Panel de ajustes post-onboarding: gestiona IAs personalizadas,
+    claves base y cierre de sesión segura con limpieza de cookie.
+    """
+    tab1, tab2, tab3 = st.tabs(["🤖 IAs Externas", "🔑 Claves Base", "👤 Cuenta"])
+
+    # ------------------------------------------------------------------ #
+    #  TAB 1 — IAs Externas                                               #
+    # ------------------------------------------------------------------ #
+    with tab1:
+        custom_models = st.session_state.api_keys.get("CUSTOM_MODELS", [])
+
+        if custom_models:
+            st.markdown("**Modelos conectados:**")
+            for cm in custom_models:
+                col_info, col_del = st.columns([5, 1])
+                with col_info:
+                    st.success(f"✅ **{cm['name']}** — `{cm['model_id']}` en `{cm['base_url']}`")
+                with col_del:
+                    if st.button("🗑️", key=f"del_{cm['name']}", help=f"Eliminar {cm['name']}"):
+                        custom_models = [m for m in custom_models if m['name'] != cm['name']]
+                        updated_keys = {**st.session_state.api_keys, "CUSTOM_MODELS": custom_models}
+                        update_api_keys(st.session_state.user_id, updated_keys)
+                        st.session_state.api_keys = updated_keys
+                        st.rerun()
+            st.divider()
+        else:
+            st.info("📡 No tienes ninguna IA personalizada conectada todavía.")
+
+        with st.expander("📖 Guía: ¿Cómo conectar una IA externa?", expanded=False):
+            st.markdown("""
+            Puedes conectar **cualquier IA** que use el estándar de API de OpenAI:
+
+            | Servicio | Base URL | Ejemplo de Model ID |
+            |---|---|---|
+            | **DeepSeek** | `https://api.deepseek.com/v1` | `deepseek-chat` |
+            | **Grok (xAI)** | `https://api.x.ai/v1` | `grok-3-mini` |
+            | **Together AI** | `https://api.together.xyz/v1` | `meta-llama/Llama-3-70b` |
+            | **LM Studio** | `http://localhost:1234/v1` | `model-name-en-lm-studio` |
+            | **Ollama (API mode)** | `http://localhost:11434/v1` | `qwen2.5-coder:3b` |
+
+            **¿Qué necesitas?**
+            - **Nombre en el menú**: cómo quieres que aparezca en el selector de motores.
+            - **Base URL**: la dirección raíz de la API (sin `/chat/completions`).
+            - **API Key**: tu clave del proveedor (escribe cualquier texto para servicios locales).
+            - **Model ID**: el identificador exacto del modelo que usarás.
+            """)
+
+        with st.form("custom_ai_form", clear_on_submit=True):
+            st.markdown("**Conectar nuevo modelo:**")
+            cm_name  = st.text_input("Nombre descriptivo", placeholder="Ej: Mi DeepSeek Coder")
+            cm_url   = st.text_input("Base URL del Endpoint", placeholder="Ej: https://api.deepseek.com/v1")
+            cm_key   = st.text_input("API Key del proveedor", type="password")
+            cm_model = st.text_input("Model ID", placeholder="Ej: deepseek-chat")
+
+            if st.form_submit_button("➕ Conectar Modelo", type="primary", use_container_width=True):
+                if cm_name and cm_url and cm_key and cm_model:
+                    new_model = {
+                        "name":     cm_name.strip(),
+                        "base_url": cm_url.strip(),
+                        "api_key":  cm_key.strip(),
+                        "model_id": cm_model.strip(),
+                    }
+                    updated_list = custom_models + [new_model]
+                    updated_keys = {**st.session_state.api_keys, "CUSTOM_MODELS": updated_list}
+                    update_api_keys(st.session_state.user_id, updated_keys)
+                    st.session_state.api_keys = updated_keys
+                    st.success(f"✅ '{cm_name}' conectado con éxito.")
+                    st.rerun()
+                else:
+                    st.warning("⚠️ Completa todos los campos para conectar el modelo.")
+
+    # ------------------------------------------------------------------ #
+    #  TAB 2 — Claves Base                                                #
+    # ------------------------------------------------------------------ #
+    with tab2:
+        st.markdown("Actualiza tus claves de acceso. Los campos vacíos conservan la clave guardada.")
+        with st.form("base_keys_form"):
+            keys = st.session_state.api_keys
+            new_gemini = st.text_input("Gemini API Key",       type="password", value=keys.get("GEMINI_API_KEY", ""))
+            new_groq   = st.text_input("Groq API Key",         type="password", value=keys.get("GROQ_API_KEY", ""))
+            new_or     = st.text_input("OpenRouter API Key",   type="password", value=keys.get("OPENROUTER_API_KEY", ""))
+            new_hf     = st.text_input("Hugging Face API Key", type="password", value=keys.get("HF_API_KEY", ""))
+            new_oai    = st.text_input("OpenAI API Key",       type="password", value=keys.get("OPENAI_API_KEY", ""))
+            new_stab   = st.text_input("Stability AI API Key", type="password", value=keys.get("STABILITY_API_KEY", ""))
+
+            if st.form_submit_button("💾 Guardar Cambios", type="primary", use_container_width=True):
+                updated_keys = {
+                    **keys,  # preserva CUSTOM_MODELS y cualquier otro campo no listado aquí
+                    "GEMINI_API_KEY":     new_gemini or keys.get("GEMINI_API_KEY", ""),
+                    "GROQ_API_KEY":       new_groq   or keys.get("GROQ_API_KEY", ""),
+                    "OPENROUTER_API_KEY": new_or     or keys.get("OPENROUTER_API_KEY", ""),
+                    "HF_API_KEY":         new_hf     or keys.get("HF_API_KEY", ""),
+                    "OPENAI_API_KEY":     new_oai    or keys.get("OPENAI_API_KEY", ""),
+                    "STABILITY_API_KEY":  new_stab   or keys.get("STABILITY_API_KEY", ""),
+                }
+                update_api_keys(st.session_state.user_id, updated_keys)
+                st.session_state.api_keys = updated_keys
+                st.success("✅ Claves actualizadas correctamente.")
+                st.rerun()
+
+    # ------------------------------------------------------------------ #
+    #  TAB 3 — Cuenta y Logout                                            #
+    # ------------------------------------------------------------------ #
+    with tab3:
+        st.markdown("""
+        **Sesión activa**
+
+        Tus claves y modelos se persisten de forma encriptada en la base de datos.
+        Al cerrar sesión, la cookie de acceso persistente es eliminada del
+        navegador y del servidor simultáneamente.
+        """)
+        st.divider()
+        st.markdown('<div class="danger-btn">', unsafe_allow_html=True)
+        if st.button("🚪 Cerrar Sesión Segura", use_container_width=True, key="logout_btn"):
+            cookie_manager.delete("auth_token")
+            from src.database import clear_remember_token
+            clear_remember_token(st.session_state.user_id)
+            # Limpiar TODA la sesión en memoria — el usuario vuelve al login
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+
+
 def get_roles():
     return {
         "🧠 Asistente General (Tech Lead)": {
