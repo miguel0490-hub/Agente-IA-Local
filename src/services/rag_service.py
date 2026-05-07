@@ -1,3 +1,9 @@
+"""
+src/services/rag_service.py — Servicio de Recuperación Aumentada (RAG).
+
+Indexa documentos en una base de datos SQLite FTS5 y ejecuta búsquedas
+de texto completo (BM25) para inyectar contexto relevante al LLM.
+"""
 import sqlite3
 import os
 import re
@@ -13,8 +19,8 @@ class RAGService:
         self._init_db()
 
     def _init_db(self):
+        """Crea la tabla virtual FTS5 si no existe (idempotente)."""
         cursor = self.conn.cursor()
-        # Tabla virtual FTS5 para búsqueda de texto completo
         cursor.execute('''
             CREATE VIRTUAL TABLE IF NOT EXISTS documents USING fts5(
                 filename, chunk_text
@@ -43,28 +49,26 @@ class RAGService:
         return len(chunks)
 
     def query(self, query: str, limit: int = 3) -> list:
-        """Busca fragmentos relevantes."""
+        """Busca fragmentos relevantes usando BM25/MATCH con fallback a LIKE."""
         cursor = self.conn.cursor()
         clean_query = re.sub(r'[^\w\s]', ' ', query).strip()
-        
-        # Intentamos BM25/MATCH primero, si falla usamos LIKE
+
         try:
-            # FTS5 Match syntax
             fts_query = " OR ".join([f"{word}*" for word in clean_query.split() if len(word) > 2])
-            if not fts_query: fts_query = clean_query
-            
+            if not fts_query:
+                fts_query = clean_query
             cursor.execute('''
-                SELECT filename, chunk_text FROM documents 
-                WHERE documents MATCH ? 
+                SELECT filename, chunk_text FROM documents
+                WHERE documents MATCH ?
                 ORDER BY rank LIMIT ?
             ''', (fts_query, limit))
             results = cursor.fetchall()
         except Exception:
             cursor.execute('''
-                SELECT filename, chunk_text FROM documents 
-                WHERE chunk_text LIKE ? 
+                SELECT filename, chunk_text FROM documents
+                WHERE chunk_text LIKE ?
                 LIMIT ?
             ''', (f"%{clean_query}%", limit))
             results = cursor.fetchall()
-            
+
         return [{"filename": row[0], "content": row[1]} for row in results]

@@ -1,6 +1,14 @@
+"""
+src/database.py — Capa de Persistencia de Datos.
+
+Gestiona la conexión con SQLite, el esquema relacional (usuarios, chats,
+mensajes) y todas las transacciones de la aplicación: autenticación,
+encriptación de API Keys vía Fernet, y gestión de sesiones persistentes.
+"""
 import sqlite3
 import json
 import os
+import uuid
 import bcrypt
 from datetime import datetime
 from cryptography.fernet import Fernet
@@ -9,19 +17,25 @@ from src.core.config import APP_SECRET_KEY
 DB_PATH = os.path.join(os.getcwd(), "data", "database.sqlite")
 
 def get_connection():
+    """Abre y retorna una conexión a SQLite con foreign keys activadas y Row factory."""
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
-    # Garantiza que SQLite respete los borrados en cascada definidos en el esquema.
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 def get_cipher():
+    """Retorna un objeto Fernet inicializado con APP_SECRET_KEY para encriptar/desencriptar."""
     if not APP_SECRET_KEY:
         raise ValueError("APP_SECRET_KEY no está configurada. No se puede encriptar/desencriptar.")
     return Fernet(APP_SECRET_KEY.encode())
 
 def init_db():
+    """
+    Inicializa el esquema de la base de datos (idempotente).
+    Crea las tablas users, chats y messages si no existen, y aplica
+    migraciones de columnas opcionales de forma segura.
+    """
     conn = get_connection()
     cursor = conn.cursor()
     
@@ -74,10 +88,14 @@ def init_db():
     conn.commit()
     conn.close()
 
+
 # --- Autenticación y Usuarios ---
 
 def register_user(first_name, last_name, email, username, password):
-    import uuid
+    """
+    Registra un nuevo usuario con password hasheado (bcrypt) y un token de verificación de email.
+    Retorna (True, (user_id, token)) en éxito o (False, mensaje_error) si hay conflicto de unicidad.
+    """
     conn = get_connection()
     cursor = conn.cursor()
     
@@ -99,11 +117,11 @@ def register_user(first_name, last_name, email, username, password):
         conn.close()
 
 def verify_user_token(token):
+    """Activa la cuenta del usuario verificando el token de email. Retorna True si el token es válido."""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT id FROM users WHERE verification_token = ?", (token,))
     row = cursor.fetchone()
-    
     if row:
         cursor.execute("UPDATE users SET is_verified = 1, verification_token = NULL WHERE id = ?", (row['id'],))
         conn.commit()
@@ -112,7 +130,9 @@ def verify_user_token(token):
     conn.close()
     return False
 
+
 def verify_login(username, password):
+    """Verifica credenciales y estado de verificación. Retorna (True, user_id) o (False, mensaje)."""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT id, password_hash, is_verified FROM users WHERE username = ?", (username,))
@@ -267,9 +287,6 @@ def save_chat_messages(chat_id, messages):
     conn.commit()
     conn.close()
 
-# NOTA: delete_chat está definida arriba (línea ~167) con borrado en cascada correcto.
-# Esta segunda definición fue eliminada para evitar la sobrescritura silenciosa.
-
 # --- Remember Me (Token de Sesión Persistente) ---
 
 def update_remember_token(user_id: int, token: str) -> None:
@@ -302,11 +319,16 @@ def verify_remember_token(token: str) -> int | None:
     conn.close()
     return row['id'] if row else None
 
-# Inicializar DB al importar
+
+# Inicializar la base de datos al importar el módulo
 init_db()
 
+
 def generate_password_reset_token(email):
-    import uuid
+    """
+    Genera un token UUID para el flujo de recuperación de contraseña por email.
+    Retorna (True, first_name, token) si el email existe, o (False, None, None).
+    """
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT first_name FROM users WHERE email = ?", (email,))
@@ -314,7 +336,7 @@ def generate_password_reset_token(email):
     if not row:
         conn.close()
         return False, None, None
-        
+
     token = uuid.uuid4().hex
     cursor.execute("UPDATE users SET reset_token = ? WHERE email = ?", (token, email))
     conn.commit()
@@ -322,6 +344,7 @@ def generate_password_reset_token(email):
     return True, row['first_name'], token
 
 def verify_reset_token(token):
+    """Valida un token de reset de contraseña. Retorna (True, user_id) o (False, None)."""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT id, email FROM users WHERE reset_token = ?", (token,))
@@ -332,13 +355,14 @@ def verify_reset_token(token):
     return False, None
 
 def update_password_with_token(token, new_password):
+    """Actualiza la contraseña usando un token válido y lo invalida tras el uso."""
     success, user_id = verify_reset_token(token)
     if not success:
         return False, "Token inválido o expirado."
-        
+
     salt = bcrypt.gensalt()
     hashed = bcrypt.hashpw(new_password.encode('utf-8'), salt).decode('utf-8')
-    
+
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("UPDATE users SET password_hash = ?, reset_token = NULL WHERE id = ?", (hashed, user_id))

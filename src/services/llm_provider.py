@@ -1,23 +1,37 @@
+"""
+src/services/llm_provider.py — Capa de Abstracción de Proveedores LLM.
+
+Implementa un patrón Wrapper/Adapter para desacoplar la UI de los SDKs
+específicos de cada proveedor: Gemini, Groq, OpenRouter y endpoints
+compatibles con la API de OpenAI. También incluye wrappers de audio
+(Transcripción Whisper, Síntesis TTS).
+"""
 import os
-import json
-import requests
 import datetime
-import google.genai as ggenai 
+import json
+
+import requests
+import google.genai as ggenai
 from google.genai import types
 from groq import Groq
+from openai import OpenAI
 
 from src.core.config import CARPETA_IMAGENES, PROMPT_TECH_LEAD
-from openai import OpenAI
+
 
 class LLMProvider:
     """Clase base (Wrapper) para proveedores de modelos de lenguaje."""
+
     def __init__(self, api_key=None):
         self.api_key = api_key
 
     def stream_chat(self, mensaje: str, historial: list, system_instruction: str = None):
+        """Interfaz de streaming. Debe ser implementada por cada subclase."""
         raise NotImplementedError
 
+
 class GeminiProvider(LLMProvider):
+    """Proveedor Google Gemini con soporte multimodal (texto + imagen) y streaming."""
     def stream_chat(self, carga_util, historial=None, system_instruction: str = None):
         if not self.api_key:
             yield "❌ Funcionalidad omitida durante el onboarding por falta de clave (Gemini). Por favor, actualiza tu perfil."
@@ -26,8 +40,7 @@ class GeminiProvider(LLMProvider):
         try:
             cliente = ggenai.Client(api_key=self.api_key)
             model_name = 'gemini-2.5-pro'
-            
-            # Configuramos los filtros de seguridad al mínimo para evitar que corte el código fuente generado
+
             safety_settings = [
                 types.SafetySetting(
                     category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
@@ -48,15 +61,14 @@ class GeminiProvider(LLMProvider):
             ]
 
             config = types.GenerateContentConfig(
-                system_instruction=system_instruction or PROMPT_TECH_LEAD, 
-                temperature=0.2, # Reducido a 0.2 para código más preciso y menos propenso a errores de formato
+                system_instruction=system_instruction or PROMPT_TECH_LEAD,
+                temperature=0.2,
                 max_output_tokens=8192,
                 safety_settings=safety_settings
             )
-            
+
             chat = cliente.chats.create(model=model_name, config=config)
             for frag in chat.send_message_stream(carga_util):
-                # Gemini Vision puede emitir fragmentos con text=None durante el procesamiento
                 if frag.text is not None:
                     yield frag.text
         except Exception as e: 
@@ -94,7 +106,10 @@ class GeminiProvider(LLMProvider):
         except Exception as e:
             return None, f"❌ Error crítico en Generador de Arte: {e}"
 
+
 class GroqProvider(LLMProvider):
+    """Proveedor Groq con soporte de streaming sobre modelos LLaMA de alta velocidad."""
+
     def __init__(self, api_key=None, model="llama-3.3-70b-versatile"):
         super().__init__(api_key)
         self.model = model
@@ -103,27 +118,30 @@ class GroqProvider(LLMProvider):
         if not self.api_key:
             yield "❌ Funcionalidad omitida durante el onboarding por falta de clave (Groq). Por favor, actualiza tu perfil."
             return
-            
+
         try:
             cliente = Groq(api_key=self.api_key)
             mensajes = [{"role": "system", "content": system_instruction or PROMPT_TECH_LEAD}]
-            for m in historial: 
+            for m in historial:
                 if m.get("content"):
                     mensajes.append({"role": m["role"], "content": m["content"]})
             mensajes.append({"role": "user", "content": mensaje})
             stream = cliente.chat.completions.create(
-                model=self.model, 
-                messages=mensajes, 
+                model=self.model,
+                messages=mensajes,
                 stream=True,
                 max_tokens=8192,
-                temperature=0.2 # Reducido para mayor precisión en código
+                temperature=0.2
             )
             for chunk in stream:
-                if chunk.choices[0].delta.content: yield chunk.choices[0].delta.content
-        except Exception as e: 
+                if chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+        except Exception as e:
             raise
 
+
 class OpenRouterProvider(LLMProvider):
+    """Proveedor OpenRouter: acceso unificado a múltiples LLMs vía API compatible con OpenAI."""
     def stream_chat(self, mensaje: str, historial: list, system_instruction: str = None):
         if not self.api_key:
             yield "❌ Funcionalidad omitida durante el onboarding por falta de clave (OpenRouter). Por favor, actualiza tu perfil."
@@ -134,7 +152,7 @@ class OpenRouterProvider(LLMProvider):
                 api_key=self.api_key,
                 base_url="https://openrouter.ai/api/v1",
                 default_headers={
-                    "HTTP-Referer": "https://superagenteiapro.com",  # Dominio de producción
+                    "HTTP-Referer": "https://superagenteiapro.com",
                     "X-Title": "SuperAgente IA Pro"
                 }
             )
@@ -145,7 +163,7 @@ class OpenRouterProvider(LLMProvider):
             mensajes.append({"role": "user", "content": mensaje})
 
             stream = cliente.chat.completions.create(
-                model="meta-llama/llama-3-8b-instruct:free",  # Modelo gratuito muy estable
+                model="meta-llama/llama-3-8b-instruct:free",
                 messages=mensajes,
                 stream=True,
                 temperature=0.2
@@ -186,7 +204,6 @@ class CustomOpenAIProvider(LLMProvider):
                 api_key=self.api_key,
                 base_url=self.base_url,
             )
-            # El system prompt es el primero — esto es lo que activa el tool calling
             mensajes = [{"role": "system", "content": system_instruction or PROMPT_TECH_LEAD}]
             for m in historial:
                 if m.get("content"):
@@ -212,6 +229,8 @@ class CustomOpenAIProvider(LLMProvider):
 
 
 class GroqWhisperProvider:
+    """Wrapper de transcripción de audio usando Groq Whisper v3."""
+
     def __init__(self, api_key=None):
         self.api_key = api_key
 
@@ -223,6 +242,8 @@ class GroqWhisperProvider:
 
 
 class OpenAITTSProvider:
+    """Sintetizador de voz usando la API Text-to-Speech de OpenAI."""
+
     VOCES_DISPONIBLES = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"]
 
     def __init__(self, voice: str = "alloy", api_key=None):
@@ -237,6 +258,8 @@ class OpenAITTSProvider:
 
 
 class EdgeTTSProvider:
+    """Sintetizador de voz gratuito usando Microsoft Edge TTS (sin API key)."""
+
     def __init__(self, voice: str = "es-ES-AlvaroNeural"):
         self.voice = voice
 
