@@ -3,14 +3,38 @@
 
 # Entornos virtuales y archivos temporales de Python
 venv/
+.venv/
 __pycache__/
 *.pyc
+*.pyo
 
-# Imágenes o iconos
+# Imágenes, iconos y binarios generados
 *.jpg
+*.jpeg
+*.png
+*.gif
 *.ico
+*.mp3
+*.mp4
+*.wav
+*.webm
 
-# Outputs del Agente y configuración local
+# Outputs del Agente y datos locales
 generated_images/
 historial_chat.json
 test_output.pdf
+
+# Bases de datos locales (nunca al repo)
+*.sqlite
+*.db
+
+# Archivos de auditoría y snapshots generados automáticamente
+auditoria_*.md
+codebase_*.md
+codebase_*.xml
+codigo_completo_*.txt
+export_project.py
+genera_auditoria.py
+
+# Backups de archivos de configuración
+*.bak
