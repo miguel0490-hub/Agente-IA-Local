@@ -1,7 +1,7 @@
 streamlit>=1.30.0
 bcrypt
 python-dotenv
-google-generativeai
+google-genai
 openai
 groq
 cryptography

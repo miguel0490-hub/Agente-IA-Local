@@ -84,7 +84,11 @@ class FileFactory:
             PDFKIT_CONFIG = None
             try:
                 import pdfkit
-                WKHTMLTOPDF_PATH = os.getenv("WKHTMLTOPDF_PATH", r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe")
+                import platform
+                _default_wk = (r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe"
+                               if platform.system() == "Windows"
+                               else "/usr/bin/wkhtmltopdf")
+                WKHTMLTOPDF_PATH = os.getenv("WKHTMLTOPDF_PATH", _default_wk)
                 if WKHTMLTOPDF_PATH and os.path.exists(WKHTMLTOPDF_PATH):
                     PDFKIT_CONFIG = pdfkit.configuration(wkhtmltopdf=WKHTMLTOPDF_PATH)
                 HAS_PDFKIT = True
