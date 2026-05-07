@@ -17,3 +17,5 @@ requests
 pypandoc
 edge-tts
 extra-streamlit-components
+pdf2docx
+pdfkit
