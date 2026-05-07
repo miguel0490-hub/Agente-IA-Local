@@ -126,6 +126,38 @@ def verify_login(username, password):
             return True, row['id']
     return False, "Usuario o contraseña incorrectos."
 
+def get_user_profile(user_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT first_name, last_name, email, username FROM users WHERE id = ?", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return dict(row)
+    return {}
+
+def change_user_password(user_id, old_password, new_password):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT password_hash FROM users WHERE id = ?", (user_id,))
+    row = cursor.fetchone()
+    
+    if not row:
+        conn.close()
+        return False, "Usuario no encontrado."
+        
+    if not bcrypt.checkpw(old_password.encode('utf-8'), row['password_hash'].encode('utf-8')):
+        conn.close()
+        return False, "La contraseña actual es incorrecta."
+        
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(new_password.encode('utf-8'), salt).decode('utf-8')
+    
+    cursor.execute("UPDATE users SET password_hash = ? WHERE id = ?", (hashed, user_id))
+    conn.commit()
+    conn.close()
+    return True, "Contraseña actualizada con éxito."
+
 def update_api_keys(user_id, api_keys_dict):
     cipher = get_cipher()
     json_str = json.dumps(api_keys_dict)

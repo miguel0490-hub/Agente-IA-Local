@@ -243,18 +243,18 @@ class Spacing:
     BORDER_RADIUS_MD = "16px"
     BORDER_RADIUS_SM = "12px"
 
-# Estilos inyectables (CSS Avanzado)
+# Estilos inyectables (CSS Avanzado y Limpio)
 ESTILOS_CSS = f"""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap');
     @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@800&display=swap');
 
-    /* Ocultar elementos nativos */
+    /* Ocultar elementos nativos de Streamlit */
     #MainMenu {{visibility: hidden;}}
     footer {{visibility: hidden;}}
     header {{background-color: transparent !important;}}
     [data-testid="stToolbar"] {{visibility: hidden;}}
-    
+
     [data-testid="collapsedControl"],
     [data-testid="stSidebarCollapseButton"],
     [data-testid="stExpandSidebarButton"] {{
@@ -265,7 +265,6 @@ ESTILOS_CSS = f"""
         padding: 4px 8px !important;
         z-index: 10000 !important;
     }}
-    
     [data-testid="collapsedControl"]::after {{
         content: " Abrir Menú";
         font-family: 'Inter', sans-serif;
@@ -273,7 +272,7 @@ ESTILOS_CSS = f"""
         font-weight: 600;
         margin-left: 4px;
     }}
-    
+
     /* Fondo global y tipografía */
     .stApp {{
         background: radial-gradient(circle at top right, #131A26, #0B0C10);
@@ -284,68 +283,59 @@ ESTILOS_CSS = f"""
     /* Animaciones Globales */
     @keyframes fadeSlideUp {{
         from {{ opacity: 0; transform: translateY(15px); }}
-        to {{ opacity: 1; transform: translateY(0); }}
+        to   {{ opacity: 1; transform: translateY(0); }}
     }}
-    
     @keyframes shineTitle {{
         to {{ background-position: 200% center; }}
     }}
 
-    /* Scrollbars ultra-finos y de neón para el panel principal */
-    ::-webkit-scrollbar {{
-        width: 6px;
-        height: 6px;
-    }}
-    ::-webkit-scrollbar-track {{
-        background: rgba(11, 12, 16, 0.9); 
-    }}
-    ::-webkit-scrollbar-thumb {{
-        background: {Colors.PRIMARY}; 
-        border-radius: 10px;
-    }}
-    ::-webkit-scrollbar-thumb:hover {{
-        background: {Colors.SECONDARY}; 
-    }}
+    /* Scrollbars ultra-finos y de neón */
+    ::-webkit-scrollbar {{ width: 6px; height: 6px; }}
+    ::-webkit-scrollbar-track {{ background: rgba(11, 12, 16, 0.9); }}
+    ::-webkit-scrollbar-thumb {{ background: {Colors.PRIMARY}; border-radius: 10px; }}
+    ::-webkit-scrollbar-thumb:hover {{ background: {Colors.SECONDARY}; }}
 
-    /* ── SIDEBAR: Glassmorphism + scroll correcto ──────────────────── */
+    /* ── SIDEBAR: Glassmorphism + Scroll ────────────────────────── */
     [data-testid="stSidebar"] {{
         background-color: rgba(10, 14, 20, 0.80) !important;
         backdrop-filter: blur(25px) !important;
         -webkit-backdrop-filter: blur(25px) !important;
         border-right: 1px solid {Colors.GLASS_BORDER} !important;
     }}
-
-    /* Permitir scroll en el sidebar — NUNCA ocultar contenido */
     [data-testid="stSidebar"] > div:first-child {{
-        overflow-y: auto !important;
-        overflow-x: hidden !important;
-        padding-top: 1.5rem !important;
-        padding-bottom: 2rem !important;
+        overflow-y: auto !important; overflow-x: hidden !important;
+        padding-top: 1.5rem !important; padding-bottom: 2rem !important;
     }}
-
-    /* Scrollbar neon dentro del sidebar */
-    [data-testid="stSidebar"] > div:first-child::-webkit-scrollbar {{
-        width: 4px;
-    }}
-    [data-testid="stSidebar"] > div:first-child::-webkit-scrollbar-track {{
-        background: transparent;
-    }}
-    [data-testid="stSidebar"] > div:first-child::-webkit-scrollbar-thumb {{
-        background: {Colors.PRIMARY};
-        border-radius: 10px;
-        opacity: 0.5;
-    }}
-
-    [data-testid="stSidebarUserContent"] {{
-        padding-top: 0rem !important;
-        padding-bottom: 1rem !important;
-    }}
-
-    /* Separadores y headers dentro del sidebar */
-    [data-testid="stSidebar"] hr {{ margin-top: 8px !important; margin-bottom: 8px !important; }}
+    [data-testid="stSidebar"] > div:first-child::-webkit-scrollbar {{ width: 4px; }}
+    [data-testid="stSidebar"] > div:first-child::-webkit-scrollbar-track {{ background: transparent; }}
+    [data-testid="stSidebar"] > div:first-child::-webkit-scrollbar-thumb {{ background: {Colors.PRIMARY}; border-radius: 10px; opacity: 0.5; }}
+    [data-testid="stSidebarUserContent"] {{ padding-top: 0rem !important; padding-bottom: 1rem !important; }}
+    [data-testid="stSidebar"] hr {{ margin-top: 8px !important; margin-bottom: 8px !important; border-color: rgba(255,255,255,0.05) !important; }}
     [data-testid="stSidebar"] h3 {{ font-size: 0.78rem !important; text-transform: uppercase; letter-spacing: 1.5px; color: rgba(255,255,255,0.45) !important; font-weight: 600 !important; margin-bottom: 6px !important; margin-top: 4px !important; }}
 
-    /* Botón de peligro (Borrar Memoria) */
+    /* ── Tarjeta de Perfil Premium (Glassmorphism) ─────────────── */
+    .user-profile-card {{
+        background: linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.95) 100%);
+        border: 1px solid rgba(0, 225, 217, 0.2);
+        border-left: 4px solid #00E1D9;
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border-radius: 12px;
+        padding: 16px 18px;
+        margin-bottom: 20px;
+        transition: all 0.3s ease;
+    }}
+    .user-profile-card:hover {{
+        transform: translateY(-2px);
+        box-shadow: 0 10px 40px 0 rgba(0, 225, 217, 0.15);
+        border-color: rgba(0, 225, 217, 0.4);
+    }}
+    .user-greeting {{ color: #38BDF8; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 6px; opacity: 0.9; }}
+    .user-name {{ background: linear-gradient(90deg, #F8FAFC, #94A3B8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size: 18px; font-weight: 800; margin: 0 0 2px 0; line-height: 1.2; }}
+    .user-handle {{ color: #00E1D9; font-size: 12px; font-weight: 500; margin: 0; opacity: 0.8; }}
+
+    /* ── Botón de Peligro (Logout) — selector de alta especificidad ── */
     [data-testid="stSidebar"] .danger-btn > button {{
         background: linear-gradient(90deg, #FF4B4B, #C0392B) !important;
         box-shadow: 0 4px 15px rgba(255, 75, 75, 0.35) !important;
@@ -353,70 +343,107 @@ ESTILOS_CSS = f"""
     [data-testid="stSidebar"] .danger-btn > button:hover {{
         box-shadow: 0 6px 20px rgba(255, 75, 75, 0.6) !important;
     }}
-
-    /* Estilo Glassmorphism para mensajes de Chat (con animación) */
-    .stChatMessage {{ 
-        animation: fadeSlideUp 0.4s ease-out forwards;
-        background-color: {Colors.GLASS_BG} !important;
-        backdrop-filter: blur(12px) !important;
-        -webkit-backdrop-filter: blur(12px) !important;
-        border-radius: {Spacing.BORDER_RADIUS_MD} !important; 
-        padding: {Spacing.PADDING_MD} !important; 
-        margin-bottom: {Spacing.MARGIN_BOTTOM_MD} !important; 
-        border: 1px solid {Colors.GLASS_BORDER} !important;
-        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3) !important;
-        transition: border-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
-    }}
-    .stChatMessage:hover {{
-        border-color: {Colors.GLASS_BORDER_HOVER} !important;
-        box-shadow: {Colors.SHADOW_GLOW} !important;
-        transform: translateY(-2px);
+    [data-testid="stSidebar"] .danger-btn > button * {{
+        color: #FFFFFF !important;
+        fill: #FFFFFF !important;
     }}
 
-    /* Code Blocks Premium */
-    .stChatMessage pre {{
-        background-color: rgba(0, 0, 0, 0.5) !important;
-        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    /* ========================================================
+       UNIFICACIÓN GLOBAL Y ABSOLUTA DE TODOS LOS BOTONES (FIX DEFINITIVO)
+       ======================================================== */
+    /* 1. Apuntar a TODOS los tipos de botones nativos y del File Uploader */
+    button[kind="primary"],
+    button[kind="secondary"],
+    button[kind="formSubmit"],
+    div[data-testid="stFileUploader"] button {{
+        background: linear-gradient(90deg, #00F2FE, #4FACFE) !important;
+        background-color: #00F2FE !important;
+        border: none !important;
         border-radius: 8px !important;
+        box-shadow: 0 4px 15px rgba(0, 242, 254, 0.3) !important;
+        transition: all 0.3s ease !important;
     }}
-    .stChatMessage code {{
-        color: #00F2FE !important;
-        background-color: transparent !important;
+    /* 2. FUERZA BRUTA: Texto oscuro perforando cualquier etiqueta anidada */
+    button[kind="primary"], button[kind="primary"] *,
+    button[kind="secondary"], button[kind="secondary"] *,
+    button[kind="formSubmit"], button[kind="formSubmit"] *,
+    div[data-testid="stFileUploader"] button, div[data-testid="stFileUploader"] button * {{
+        color: #0F172A !important;
+        -webkit-text-fill-color: #0F172A !important;
+        fill: #0F172A !important;
+        font-weight: 800 !important;
+        font-size: 15px !important;
+    }}
+    /* 3. Efecto Hover Unificado */
+    button[kind="primary"]:hover,
+    button[kind="secondary"]:hover,
+    button[kind="formSubmit"]:hover,
+    div[data-testid="stFileUploader"] button:hover {{
+        transform: translateY(-2px) !important;
+        box-shadow: 0 6px 20px rgba(0, 242, 254, 0.5) !important;
+        filter: brightness(1.1) !important;
     }}
 
-    /* Avatares */
-    .stChatMessage [data-testid="chatAvatarIcon-user"] {{
-        background: linear-gradient(135deg, #FF6B6B, #C56CD6) !important;
-        box-shadow: 0 0 10px rgba(197, 108, 214, 0.5);
+    /* ── Cajas de Texto y Formularios ───────────────────────── */
+    div[data-testid="stTextInput"] label p,
+    div[data-testid="stPasswordInput"] label p {{ color: #F8FAFC !important; font-weight: 600 !important; font-size: 14px !important; }}
+    div[data-testid="stTextInput"] input,
+    div[data-testid="stPasswordInput"] input {{
+        color: #FFFFFF !important; background-color: #1E293B !important;
+        border: 1px solid #475569 !important; border-radius: 8px !important;
     }}
-    .stChatMessage [data-testid="chatAvatarIcon-assistant"] {{
-        background: linear-gradient(135deg, {Colors.PRIMARY}, {Colors.SECONDARY}) !important;
-        box-shadow: 0 0 15px rgba(0, 242, 254, 0.6);
-    }}
+    div[data-testid="stTextInput"] input::placeholder,
+    div[data-testid="stPasswordInput"] input::placeholder {{ color: #64748B !important; }}
 
-    /* Input Box flotante (Dynamic Island) */
-    [data-testid="stChatInput"] {{
+    /* Caja del Chat (Dynamic Island) */
+    div[data-testid="stChatInput"] {{
         background-color: rgba(15, 20, 28, 0.85) !important;
         border: 1px solid {Colors.GLASS_BORDER} !important;
         border-radius: 25px !important;
         box-shadow: 0 15px 30px rgba(0,0,0,0.6) !important;
         backdrop-filter: blur(15px) !important;
-        padding: 5px 15px !important;
-        margin-bottom: 20px !important;
-        z-index: 99 !important;
-        position: relative !important;
+        padding: 5px 15px !important; margin-bottom: 20px !important; z-index: 99 !important;
     }}
-    [data-testid="stChatInput"]:focus-within {{
+    div[data-testid="stChatInput"]:focus-within {{
         border-color: {Colors.PRIMARY} !important;
         box-shadow: 0 0 20px rgba(0, 242, 254, 0.5), 0 15px 30px rgba(0,0,0,0.6) !important;
     }}
+    div[data-testid="stChatInput"] textarea {{ color: #FFFFFF !important; }}
+    div[data-testid="stChatInput"] textarea::placeholder {{ color: #94A3B8 !important; }}
+    div[data-testid="stChatInput"] button {{ color: #00F2FE !important; }}
 
-    /* File Uploader estilo Neón */
-    [data-testid="stFileUploader"] {{ 
+    /* ── Burbujas de Chat ────────────────────────────────────── */
+    .stChatMessage {{
+        animation: fadeSlideUp 0.4s ease-out forwards;
+        background-color: #1E293B !important;
+        backdrop-filter: blur(12px) !important; -webkit-backdrop-filter: blur(12px) !important;
+        border-radius: {Spacing.BORDER_RADIUS_MD} !important;
+        padding: {Spacing.PADDING_MD} !important; margin-bottom: 15px !important;
+        border: 1px solid #334155 !important;
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3) !important;
+        transition: border-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
+    }}
+    .stChatMessage:hover {{
+        border-color: {Colors.GLASS_BORDER_HOVER} !important;
+        box-shadow: {Colors.SHADOW_GLOW} !important; transform: translateY(-2px);
+    }}
+    div[data-testid="stChatMessage"] p, div[data-testid="stChatMessage"] span, div[data-testid="stChatMessage"] li {{
+        color: #F8FAFC !important; font-size: 16px !important; line-height: 1.6 !important; font-weight: 400 !important;
+    }}
+    div[data-testid="stChatMessage"] h1, div[data-testid="stChatMessage"] h2, div[data-testid="stChatMessage"] h3 {{
+        color: #00F2FE !important; margin-top: 10px !important;
+    }}
+    .stChatMessage pre {{ background-color: rgba(0, 0, 0, 0.5) !important; border: 1px solid rgba(255, 255, 255, 0.1) !important; border-radius: 8px !important; }}
+    .stChatMessage code {{ color: #00F2FE !important; background-color: transparent !important; }}
+    .stChatMessage [data-testid="chatAvatarIcon-user"] {{ background: linear-gradient(135deg, #FF6B6B, #C56CD6) !important; box-shadow: 0 0 10px rgba(197, 108, 214, 0.5); }}
+    .stChatMessage [data-testid="chatAvatarIcon-assistant"] {{ background: linear-gradient(135deg, {Colors.PRIMARY}, {Colors.SECONDARY}) !important; box-shadow: 0 0 15px rgba(0, 242, 254, 0.6); }}
+
+    /* ── File Uploader ──────────────────────────────────────── */
+    [data-testid="stFileUploader"] {{
         background-color: rgba(0,0,0,0.2) !important;
-        padding: {Spacing.PADDING_MD} !important; 
-        border-radius: {Spacing.BORDER_RADIUS_SM} !important; 
-        border: 2px dashed {Colors.GLASS_BORDER} !important; 
+        padding: {Spacing.PADDING_MD} !important;
+        border-radius: {Spacing.BORDER_RADIUS_SM} !important;
+        border: 2px dashed {Colors.GLASS_BORDER} !important;
         transition: all 0.3s ease;
     }}
     [data-testid="stFileUploader"]:hover {{
@@ -424,267 +451,40 @@ ESTILOS_CSS = f"""
         background-color: rgba(0, 242, 254, 0.05) !important;
     }}
 
-    /* Botones Premium */
-    .stButton>button {{
-        background: linear-gradient(90deg, {Colors.PRIMARY}, {Colors.SECONDARY}) !important;
-        color: white !important;
-        border: none !important;
-        border-radius: 8px !important;
-        font-weight: 600 !important;
-        letter-spacing: 0.5px !important;
-        transition: all 0.3s ease !important;
-        box-shadow: 0 4px 15px rgba(0, 242, 254, 0.3) !important;
-    }}
-    .stButton>button:hover {{
-        transform: translateY(-2px) !important;
-        box-shadow: 0 6px 20px rgba(0, 242, 254, 0.5) !important;
-        filter: brightness(1.1);
-    }}
-
-    /* Selectbox (Menú Desplegable) y Flecha */
-    div[data-baseweb="select"], div[data-baseweb="select"] * {{
-        cursor: pointer !important;
-    }}
+    /* ── Menús Desplegables (Selectbox) ─────────────────────── */
     div[data-baseweb="select"] > div {{
-        background-color: rgba(15, 20, 28, 0.8) !important;
-        border: 1px solid {Colors.GLASS_BORDER} !important;
-        border-radius: 10px !important;
-        color: {Colors.TEXT_MAIN} !important;
+        background-color: rgba(15, 20, 28, 0.8) !important; border: 1px solid {Colors.GLASS_BORDER} !important;
+        border-radius: 10px !important; color: {Colors.TEXT_MAIN} !important;
     }}
-    div[data-baseweb="select"] > div:hover {{
-        border-color: {Colors.PRIMARY} !important;
-        box-shadow: {Colors.SHADOW_GLOW} !important;
-    }}
-    div[data-baseweb="select"] svg {{
-        fill: {Colors.PRIMARY} !important;
-        width: 1.5rem !important;
-        height: 1.5rem !important;
-        visibility: visible !important;
-        display: block !important;
-    }}
+    div[data-baseweb="select"] > div:hover {{ border-color: {Colors.PRIMARY} !important; box-shadow: {Colors.SHADOW_GLOW} !important; }}
+    div[data-baseweb="select"] svg {{ fill: {Colors.PRIMARY} !important; width: 1.5rem !important; height: 1.5rem !important; visibility: visible !important; display: block !important; }}
 
-    /* ── Contenedor Principal (Scroll Anti-Bloqueo) ────────────────── */
-    .block-container {{
-        padding-bottom: 130px !important;
-    }}
+    /* ── Diálogos, Tabs y Configuración ─────────────────────── */
+    div[data-testid="stTabs"] {{ background-color: #1E293B !important; border-radius: 12px !important; padding: 1.5rem !important; box-shadow: 0 4px 15px rgba(0,0,0,0.3) !important; }}
+    div[data-testid="stTabs"] button[aria-selected="false"] p {{ color: #94A3B8 !important; }}
+    div[data-testid="stDialog"] div[role="dialog"] {{ background-color: #111827 !important; border: 1px solid #1E293B; }}
+    div[data-testid="stDialog"] label p, div[data-testid="stDialog"] label span {{ color: #F8FAFC !important; font-weight: 600 !important; }}
+    div[data-testid="stDialog"] .stMarkdown p, div[data-testid="stDialog"] .stMarkdown span {{ color: #CBD5E0 !important; }}
+    div[data-testid="stCheckbox"] label p, div[data-testid="stCheckbox"] label span {{ color: #FFFFFF !important; font-weight: 500 !important; font-size: 14px !important; }}
+    div[data-testid="stExpanderDetails"] {{ background-color: rgba(30, 41, 59, 0.5) !important; border-radius: 10px; padding: 15px; border: 1px solid rgba(0, 225, 217, 0.2); }}
+    .stExpander details summary p {{ color: #F8FAFC !important; }}
+    .stExpander details summary svg {{ fill: #F8FAFC !important; }}
+    div[data-testid="stExpanderDetails"] p, div[data-testid="stExpanderDetails"] span,
+    div[data-testid="stExpanderDetails"] li, div[data-testid="stExpanderDetails"] strong {{ color: #E2E8F0 !important; font-size: 14px !important; }}
 
-    /* ── Ajuste Barra Lateral ──────────────────────────────────────── */
-    [data-testid="stSidebar"] .danger-btn {{
-        margin-bottom: 30px !important;
-    }}
+    /* ── Fixes Estructurales ─────────────────────────────────── */
+    .block-container {{ padding-bottom: 130px !important; }}
+    div[data-testid="stDialog"] {{ z-index: 99999 !important; }}
+    div[data-testid="stNotification"] {{ z-index: 999999 !important; }}
 
-    /* ── Capas de Flotación (Z-Index Fixes) ────────────────────────── */
-    div[data-testid="stDialog"] {{
-        z-index: 99999 !important;
-    }}
-    div[data-testid="stNotification"] {{
-        z-index: 999999 !important;
-    }}
-    .stApp > header {{
-        z-index: 9999 !important;
-    }}
-
-    /* ── Optimización Mobile (<768px) ──────────────────────────────── */
     @media (max-width: 768px) {{
-        .stApp {{
-            max-width: 100vw !important;
-            overflow-x: hidden !important;
-        }}
-        
-        /* Forzar max-width en contenedores de chat y reducir bordes/neon */
-        .stChatMessage {{
-            max-width: 100% !important;
-            padding: 15px !important;
-            margin-bottom: 15px !important;
-            box-shadow: 0 0 5px rgba(0, 0, 0, 0.3) !important;
-            border-width: 1px !important;
-            border-color: rgba(255, 255, 255, 0.1) !important;
-        }}
-        
-        /* Reducir neon en Chat Input */
-        [data-testid="stChatInput"] {{
-            box-shadow: 0 5px 15px rgba(0,0,0,0.5) !important;
-            padding: 5px 10px !important;
-            border-width: 1px !important;
-            border-color: rgba(255, 255, 255, 0.1) !important;
-        }}
-        [data-testid="stChatInput"]:focus-within {{
-            box-shadow: 0 0 8px rgba(0, 242, 254, 0.3), 0 5px 15px rgba(0,0,0,0.5) !important;
-        }}
-        
-        /* Ajuste de scroll seguro en barra lateral sin romper móviles */
-        [data-testid="stSidebar"] {{
-            max-width: 100% !important;
-            width: 100% !important;
-        }}
-        
-        [data-testid="stSidebar"] > div:first-child {{
-            height: 100% !important;
-            max-height: 100vh !important;
-            padding-bottom: 50px !important;
-        }}
-        
-        /* Reducir márgenes globales */
-        .block-container {{
-            padding-left: 15px !important;
-            padding-right: 15px !important;
-            padding-bottom: 130px !important;
-        }}
-        
-        /* Achicar título principal en móviles */
-        h1 {{
-            font-size: 2rem !important;
-        }}
-    }}
-    
-    /* Forzar color blanco en los títulos de los campos de texto (Labels) */
-    div[data-testid="stTextInput"] label p, 
-    div[data-testid="stPasswordInput"] label p {{ 
-        color: #F8FAFC !important; 
-        font-weight: 600 !important; 
-        font-size: 14px !important;
-    }}
-
-    /* Forzar fondo gris oscuro y texto blanco dentro de las cajas donde escribe el usuario */
-    div[data-testid="stTextInput"] input, 
-    div[data-testid="stPasswordInput"] input {{ 
-        color: #FFFFFF !important; 
-        background-color: #334155 !important; 
-        border: 1px solid #475569 !important; 
-        border-radius: 8px !important;
-    }}
-
-    /* ========================================================
-       UNIFICACIÓN GLOBAL DE BOTONES - ESTÉTICA PREMIUM
-       ======================================================== */
-
-    /* 1. BOTONES PRIMARIOS (Acciones principales: Enviar, Nuevo Chat, Guardar) */
-    /* Fondo Cian Eléctrico, bordes redondeados */
-    div[data-testid="stButton"] button[kind="primary"],
-    div[data-testid="stFormSubmitButton"] button,
-    div[data-testid="baseButton-primary"] button {{
-        background-color: #2FF3E0 !important;
-        border: none !important;
-        border-radius: 8px !important;
-        box-shadow: 0 4px 10px rgba(47, 243, 224, 0.2) !important;
-        transition: all 0.3s ease !important;
-    }}
-
-    /* FUERZA BRUTA: Todo el texto e iconos dentro del botón primario DEBE SER NEGRO */
-    div[data-testid="stButton"] button[kind="primary"] *,
-    div[data-testid="stFormSubmitButton"] button *,
-    div[data-testid="baseButton-primary"] button * {{
-        color: #000000 !important;
-        fill: #000000 !important;
-        font-weight: 800 !important;
-        font-size: 15px !important;
-    }}
-
-    /* Hover Primario */
-    div[data-testid="stButton"] button[kind="primary"]:hover,
-    div[data-testid="stFormSubmitButton"] button:hover {{
-        background-color: #1DD2C1 !important;
-        transform: translateY(-2px) !important;
-    }}
-
-
-    /* 2. BOTONES SECUNDARIOS (Acciones secundarias: Omitir, Cancelar, Opciones menores) */
-    /* Fondo transparente, borde gris oscuro */
-    div[data-testid="stButton"] button[kind="secondary"],
-    div[data-testid="baseButton-secondary"] button {{
-        background-color: transparent !important;
-        border: 1px solid #475569 !important;
-        border-radius: 8px !important;
-        transition: all 0.3s ease !important;
-    }}
-
-    /* FUERZA BRUTA: Todo el texto dentro del botón secundario DEBE SER CLARO para leerse en fondo oscuro */
-    div[data-testid="stButton"] button[kind="secondary"] *,
-    div[data-testid="baseButton-secondary"] button * {{
-        color: #F8FAFC !important; /* Blanco/Gris muy claro */
-        font-weight: 600 !important;
-    }}
-
-    /* Hover Secundario (Alerta visual sutil) */
-    div[data-testid="stButton"] button[kind="secondary"]:hover {{
-        border-color: #EF4444 !important; /* Borde Rojo */
-        background-color: rgba(239, 68, 68, 0.05) !important; /* Fondo rojo muy transparente */
-    }}
-    div[data-testid="stButton"] button[kind="secondary"]:hover * {{
-        color: #EF4444 !important; /* Texto Rojo */
-    }}
-
-    /* 3. CORRECCIÓN CRÍTICA: Caja de Texto del Chat (st.chat_input) -> Letras Visibles */
-    div[data-testid="stChatInput"] {{
-        background-color: #1E293B !important;
-        border: 1px solid #475569 !important;
-        border-radius: 12px !important;
-    }}
-    div[data-testid="stChatInput"] textarea {{
-        color: #FFFFFF !important; /* Texto que escribe el usuario en blanco */
-    }}
-    div[data-testid="stChatInput"] textarea::placeholder {{
-        color: #94A3B8 !important; /* Placeholder en gris claro */
-    }}
-    div[data-testid="stChatInput"] button {{
-        color: #2FF3E0 !important; /* Icono de enviar en cian */
-    }}
-
-    /* LA TARJETA (Aislamiento) */
-    div[data-testid="stTabs"] {{
-        background-color: #1E293B !important;
-        border-radius: 12px !important;
-        padding: 2rem !important;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.3) !important;
-    }}
-
-    /* PESTAÑAS INACTIVAS (Visibilidad) */
-    div[data-testid="stTabs"] button[aria-selected="false"] p {{
-        color: #94A3B8 !important; /* Gris claro visible */
-    }}
-
-    /* PLACEHOLDERS (Legibilidad) */
-    div[data-testid="stTextInput"] input::placeholder,
-    div[data-testid="stPasswordInput"] input::placeholder {{
-        color: #64748B !important; /* Slate 500 */
-    }}
-
-    /* Forzar texto blanco en los mensajes de chat */
-    div[data-testid="stChatMessage"] p, 
-    div[data-testid="stChatMessage"] span, 
-    div[data-testid="stChatMessage"] code {{
-        color: #FFFFFF !important;
-        font-size: 16px !important;
-        line-height: 1.6 !important;
-    }}
-
-    /* Asegurar que el fondo de la burbuja sea distinguible */
-    div[data-testid="stChatMessage"] {{
-        background-color: #1E293B !important;
-        border-radius: 10px !important;
-        margin-bottom: 10px !important;
-        border: 1px solid #334155 !important;
-    }}
-
-    /* Refuerzo total de legibilidad para respuestas de IA */
-    .stChatMessage, .stChatMessage div, .stChatMessage p, .stChatMessage li {{
-        color: #F8FAFC !important; /* Blanco hueso para evitar fatiga visual */
-        font-weight: 400 !important;
-        background-color: transparent !important;
-    }}
-
-    /* Resaltado de títulos dentro del chat */
-    .stChatMessage h1, .stChatMessage h2, .stChatMessage h3 {{
-        color: #2FF3E0 !important; /* Cian para encabezados de la IA */
-        margin-top: 10px !important;
-    }}
-
-    /* Forzar texto blanco en Checkboxes (Ej: "Recuérdame en este dispositivo") */
-    div[data-testid="stCheckbox"] label p,
-    div[data-testid="stCheckbox"] label span {{
-        color: {Colors.TEXT_MAIN} !important;
-        font-weight: 500 !important;
-        font-size: 14px !important;
+        .stApp {{ max-width: 100vw !important; overflow-x: hidden !important; }}
+        .stChatMessage {{ max-width: 100% !important; padding: 15px !important; margin-bottom: 15px !important; border-width: 1px !important; }}
+        [data-testid="stChatInput"] {{ box-shadow: 0 5px 15px rgba(0,0,0,0.5) !important; padding: 5px 10px !important; }}
+        [data-testid="stSidebar"] {{ max-width: 100% !important; width: 100% !important; }}
+        [data-testid="stSidebar"] > div:first-child {{ height: 100% !important; max-height: 100vh !important; padding-bottom: 50px !important; }}
+        .block-container {{ padding-left: 15px !important; padding-right: 15px !important; padding-bottom: 130px !important; }}
+        h1 {{ font-size: 2rem !important; }}
     }}
 </style>
 """

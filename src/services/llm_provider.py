@@ -123,45 +123,37 @@ class GroqProvider(LLMProvider):
         except Exception as e: 
             raise
 
-class OllamaProvider(LLMProvider):
-    def stream_chat(self, mensaje: str, historial: list, system_instruction: str = None):
-        url = "http://localhost:11434/api/chat"
-        mensajes = [{"role": "system", "content": system_instruction or PROMPT_TECH_LEAD}]
-        for m in historial:
-            if m.get("content"):
-                mensajes.append({"role": m["role"], "content": m["content"]})
-        mensajes.append({"role": "user", "content": mensaje})
-        try:
-            res = requests.post(url, json={"model": "qwen2.5-coder:3b", "messages": mensajes, "stream": True}, stream=True)
-            for linea in res.iter_lines():
-                if linea: yield json.loads(linea)["message"]["content"]
-        except Exception as e: 
-            yield f"\n\n❌ Error Ollama: {e}"
-
 class OpenRouterProvider(LLMProvider):
     def stream_chat(self, mensaje: str, historial: list, system_instruction: str = None):
         if not self.api_key:
             yield "❌ Funcionalidad omitida durante el onboarding por falta de clave (OpenRouter). Por favor, actualiza tu perfil."
             return
-            
+
         try:
             cliente = OpenAI(
                 api_key=self.api_key,
                 base_url="https://openrouter.ai/api/v1",
+                default_headers={
+                    "HTTP-Referer": "https://superagenteiapro.com",  # Dominio de producción
+                    "X-Title": "SuperAgente IA Pro"
+                }
             )
             mensajes = [{"role": "system", "content": system_instruction or PROMPT_TECH_LEAD}]
-            for m in historial: 
+            for m in historial:
                 if m.get("content"):
                     mensajes.append({"role": m["role"], "content": m["content"]})
             mensajes.append({"role": "user", "content": mensaje})
+
             stream = cliente.chat.completions.create(
-                model="qwen/qwen3-coder:free",
+                model="meta-llama/llama-3-8b-instruct:free",  # Modelo gratuito muy estable
                 messages=mensajes,
-                stream=True
+                stream=True,
+                temperature=0.2
             )
             for chunk in stream:
-                if chunk.choices[0].delta.content: yield chunk.choices[0].delta.content
-        except Exception as e: 
+                if chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+        except Exception as e:
             yield f"\n\n❌ Error OpenRouter: {e}"
 
 
@@ -212,7 +204,11 @@ class CustomOpenAIProvider(LLMProvider):
                 if delta_content:
                     yield delta_content
         except Exception as e:
-            yield f"\n\n❌ Error en modelo personalizado '{self.model_name}': {e}"
+            error_str = str(e)
+            if "402" in error_str or "Insufficient Balance" in error_str:
+                yield f"\n\n⚠️ Error 402: No tienes saldo suficiente en este proveedor. Por favor, recarga tu cuenta en su sitio oficial."
+            else:
+                yield f"\n\n❌ Error en modelo personalizado '{self.model_name}': {e}"
 
 
 class GroqWhisperProvider:

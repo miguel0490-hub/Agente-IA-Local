@@ -2,6 +2,7 @@ import streamlit as st
 import os
 import sys
 import json
+import time
 
 st.set_page_config(page_title="SuperAgente IA Pro", page_icon="⚡", layout="wide", initial_sidebar_state="expanded")
 
@@ -45,6 +46,8 @@ if "auto_close_sidebar" not in st.session_state:
     st.session_state.auto_close_sidebar = False
 if "temp_custom_models" not in st.session_state:
     st.session_state.temp_custom_models = []
+if "show_settings" not in st.session_state:
+    st.session_state.show_settings = False
 
 # --- ESTILOS ---
 st.markdown(ESTILOS_CSS, unsafe_allow_html=True)
@@ -55,7 +58,8 @@ if not os.path.exists(CARPETA_IMAGENES):
 # --- AUTO-LOGIN POR COOKIE (Remember Me) ---
 # Se ejecuta antes del bloque de login para restaurar la sesión sin interacción del usuario.
 if not st.session_state.user_id:
-    _auth_cookie = cookie_manager.get("auth_token")
+    cookies = cookie_manager.get_all()
+    _auth_cookie = cookies.get("auth_token") if isinstance(cookies, dict) else cookie_manager.get("auth_token")
     if _auth_cookie:
         _remembered_user_id = verify_remember_token(_auth_cookie)
         if _remembered_user_id:
@@ -109,8 +113,8 @@ if not st.session_state.user_id:
         
         with tab1:
             with st.form("login_form"):
-                username = st.text_input("Usuario", placeholder="Tu usuario")
-                password = st.text_input("Contraseña", type="password")
+                username = st.text_input("Usuario", placeholder="Tu usuario", autocomplete="username")
+                password = st.text_input("Contraseña", type="password", autocomplete="current-password")
                 remember_me = st.checkbox("🔒 Recuérdame en este dispositivo", value=False)
                 submitted = st.form_submit_button("Entrar", use_container_width=True)
                 if submitted:
@@ -137,6 +141,7 @@ if not st.session_state.user_id:
                                 # Limpia cualquier cookie previa si el usuario no quiere persistencia
                                 cookie_manager.delete("auth_token")
                                 clear_remember_token(result)
+                            time.sleep(0.8)  # Permite al frontend escribir la cookie persistente
                             st.rerun()
                         else:
                             st.error(result)
@@ -200,9 +205,9 @@ if not st.session_state.onboarding_done:
         
         step = st.session_state.onboarding_step
         
-        if step < 7:
-            st.progress(step / 7.0)
-            st.caption(f"Paso {step + 1} de 7")
+        if step < 6:
+            st.progress(step / 6.0)
+            st.caption(f"Paso {step + 1} de 6")
         
         if step == 0:
             st.markdown("### Paso 1: Configurar Gemini")
@@ -256,24 +261,7 @@ if not st.session_state.onboarding_done:
                     st.rerun()
 
         elif step == 3:
-            st.markdown("### Paso 4: Configurar Hugging Face")
-            st.markdown("Integración con modelos open-source de Hugging Face. [Obtener mi API Key aquí](https://huggingface.co/settings/tokens)")
-            key = st.text_input("Hugging Face API Key", type="password", key="hf_input")
-            c1, c2 = st.columns(2)
-            with c1:
-                if st.button("Guardar y Siguiente", type="primary", key="hf_save", use_container_width=True):
-                    st.session_state.temp_keys["HF_API_KEY"] = key
-                    st.session_state.onboarding_step += 1
-                    st.rerun()
-            with c2:
-                if st.button("Omitir esta IA", type="secondary", key="hf_skip", use_container_width=True):
-                    st.session_state.temp_keys["HF_API_KEY"] = ""
-                    st.toast("Has omitido Hugging Face.", icon="⚠️")
-                    st.session_state.onboarding_step += 1
-                    st.rerun()
-
-        elif step == 4:
-            st.markdown("### Paso 5: Configurar OpenAI")
+            st.markdown("### Paso 4: Configurar OpenAI")
             st.markdown("Necesario para generación de voz (TTS) y DALL-E 3. [Obtener mi API Key aquí](https://platform.openai.com/api-keys)")
             key = st.text_input("OpenAI API Key", type="password", key="oai_input")
             c1, c2 = st.columns(2)
@@ -289,8 +277,8 @@ if not st.session_state.onboarding_done:
                     st.session_state.onboarding_step += 1
                     st.rerun()
 
-        elif step == 5:
-            st.markdown("### Paso 6: Configurar Stability AI")
+        elif step == 4:
+            st.markdown("### Paso 5: Configurar Stability AI")
             st.markdown("Generación de imágenes de alta resolución (SD3). [Obtener mi API Key aquí](https://platform.stability.ai/account/keys)")
             key = st.text_input("Stability AI API Key", type="password", key="stab_input")
             c1, c2 = st.columns(2)
@@ -306,8 +294,8 @@ if not st.session_state.onboarding_done:
                     st.session_state.onboarding_step += 1
                     st.rerun()
 
-        elif step == 6:
-            st.markdown("### Paso 7: Añadir IA Personalizada (Opcional)")
+        elif step == 5:
+            st.markdown("### Paso 6: Añadir IA Personalizada (Opcional)")
             st.markdown(
                 "Conecta cualquier IA con una API compatible con OpenAI — "
                 "DeepSeek, Mistral, Together AI, LM Studio, vLLM, etc.\n\n"
@@ -362,7 +350,7 @@ if not st.session_state.onboarding_done:
                 st.session_state.onboarding_step += 1
                 st.rerun()
 
-        elif step == 7:
+        elif step == 6:
             final_keys = {k: v for k, v in st.session_state.temp_keys.items() if v}
             update_api_keys(st.session_state.user_id, final_keys)
             st.session_state.api_keys = final_keys
@@ -382,9 +370,7 @@ def get_groq_provider():
     from src.services.llm_provider import GroqProvider
     return GroqProvider(api_key=st.session_state.api_keys.get("GROQ_API_KEY"))
 
-def get_ollama_provider():
-    from src.services.llm_provider import OllamaProvider
-    return OllamaProvider()
+# OllamaProvider eliminado — usar CustomOpenAIProvider con URL de Ngrok para IAs locales
 
 def get_openrouter_provider():
     from src.services.llm_provider import OpenRouterProvider
@@ -422,38 +408,66 @@ def panel_ajustes():
         if custom_models:
             st.markdown("**Modelos conectados:**")
             for cm in custom_models:
-                col_info, col_del = st.columns([5, 1])
-                with col_info:
-                    st.success(f"✅ **{cm['name']}** — `{cm['model_id']}` en `{cm['base_url']}`")
-                with col_del:
-                    if st.button("🗑️", key=f"del_{cm['name']}", help=f"Eliminar {cm['name']}"):
-                        custom_models = [m for m in custom_models if m['name'] != cm['name']]
-                        updated_keys = {**st.session_state.api_keys, "CUSTOM_MODELS": custom_models}
-                        update_api_keys(st.session_state.user_id, updated_keys)
-                        st.session_state.api_keys = updated_keys
-                        st.rerun()
+                with st.container(border=True):
+                    col_info, col_del = st.columns([5, 1])
+                    with col_info:
+                        api_key_masked = f"{cm['api_key'][:4]}...{cm['api_key'][-4:]}" if len(cm['api_key']) > 8 else "***"
+                        st.markdown(f"**{cm['name']}**")
+                        st.caption(f"🆔 `{cm['model_id']}` | 🔗 `{cm['base_url']}`")
+                        st.caption(f"🔑 {api_key_masked}")
+                    with col_del:
+                        if st.button("🗑️", key=f"del_{cm['name']}", help=f"Eliminar {cm['name']}"):
+                            custom_models = [m for m in custom_models if m['name'] != cm['name']]
+                            updated_keys = {**st.session_state.api_keys, "CUSTOM_MODELS": custom_models}
+                            update_api_keys(st.session_state.user_id, updated_keys)
+                            st.session_state.api_keys = updated_keys
+                            st.rerun()
             st.divider()
         else:
             st.info("📡 No tienes ninguna IA personalizada conectada todavía.")
 
-        with st.expander("📖 Guía: ¿Cómo conectar una IA externa?", expanded=False):
+        with st.expander("📖 Guía Completa: Directorio de IAs y Túneles", expanded=False):
             st.markdown("""
-            Puedes conectar **cualquier IA** que use el estándar de API de OpenAI:
-
-            | Servicio | Base URL | Ejemplo de Model ID |
-            |---|---|---|
-            | **DeepSeek** | `https://api.deepseek.com/v1` | `deepseek-chat` |
-            | **Grok (xAI)** | `https://api.x.ai/v1` | `grok-3-mini` |
-            | **Together AI** | `https://api.together.xyz/v1` | `meta-llama/Llama-3-70b` |
-            | **LM Studio** | `http://localhost:1234/v1` | `model-name-en-lm-studio` |
-            | **Ollama (API mode)** | `http://localhost:11434/v1` | `qwen2.5-coder:3b` |
-
-            **¿Qué necesitas?**
-            - **Nombre en el menú**: cómo quieres que aparezca en el selector de motores.
-            - **Base URL**: la dirección raíz de la API (sin `/chat/completions`).
-            - **API Key**: tu clave del proveedor (escribe cualquier texto para servicios locales).
-            - **Model ID**: el identificador exacto del modelo que usarás.
-            """)
+            <div style="background: rgba(15,23,42,0.6); padding: 20px; border-radius: 12px; border: 1px solid #00E1D9; color: #CBD5E0; line-height: 1.5; font-family: sans-serif;">
+                <h3 style="color: #00E1D9; margin-top: 0; margin-bottom: 10px; font-weight: 800; font-size: 18px;">📚 Directorio Universal de IAs</h3>
+                <p style="font-size: 13px; margin-bottom: 20px;">Tu SuperAgente se conecta mediante el <b>estándar universal de OpenAI</b>. Puedes conectar literalmente cualquier modelo del mundo usando estas configuraciones:</p>
+                <h4 style="color: #F8FAFC; margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 5px; font-size: 15px;">☁️ Proveedores Cloud (La Nube)</h4>
+                <div style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; margin-bottom: 12px; border-left: 3px solid #00F2FE;">
+                    <b style="color: #FFFFFF; font-size: 14px;">🔹 DeepSeek V4</b><br>
+                    <span style="font-size: 12px;">• <b>API Keys:</b> <a href="https://platform.deepseek.com/api_keys" target="_blank" style="color: #38BDF8; text-decoration: none;">platform.deepseek.com</a></span><br>
+                    <span style="font-size: 12px;">• <b>Base URL:</b> <code style="color: #00F2FE; background: #0F172A; padding: 2px 5px; border-radius: 4px;">https://api.deepseek.com</code></span><br>
+                    <span style="font-size: 12px;">• <b>Model ID:</b> <code>deepseek-v4-flash</code> | <code>deepseek-v4-pro</code></span>
+                </div>
+                <div style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; margin-bottom: 12px; border-left: 3px solid #00F2FE;">
+                    <b style="color: #FFFFFF; font-size: 14px;">🔹 Grok (xAI 4.x)</b><br>
+                    <span style="font-size: 12px;">• <b>API Keys:</b> <a href="https://console.x.ai/" target="_blank" style="color: #38BDF8; text-decoration: none;">console.x.ai</a></span><br>
+                    <span style="font-size: 12px;">• <b>Base URL:</b> <code style="color: #00F2FE; background: #0F172A; padding: 2px 5px; border-radius: 4px;">https://api.x.ai/v1</code></span><br>
+                    <span style="font-size: 12px;">• <b>Model ID:</b> <code>grok-4.3</code> | <code>grok-4.20-reasoning</code></span>
+                </div>
+                <div style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; margin-bottom: 12px; border-left: 3px solid #00F2FE;">
+                    <b style="color: #FFFFFF; font-size: 14px;">🔹 Together AI / Mistral / OpenRouter</b><br>
+                    <span style="font-size: 12px;">• <b>Base URLs:</b> <code>https://api.together.xyz/v1</code> | <code>https://openrouter.ai/api/v1</code></span><br>
+                    <span style="font-size: 12px;">• <b>Model ID:</b> Revisa la documentación de tu proveedor para el nombre exacto.</span>
+                </div>
+                <h4 style="color: #F8FAFC; margin-top: 25px; margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 5px; font-size: 15px;">🖥️ Proveedores Locales (LM Studio / Ollama)</h4>
+                <div style="background: rgba(16, 185, 129, 0.1); padding: 15px; border-radius: 8px; border: 1px dashed #10B981; margin-bottom: 15px;">
+                    <b style="color: #10B981; font-size: 13px;">⚠️ AVISO IMPORTANTE SOBRE REDES:</b>
+                    <p style="font-size: 12px; margin-top: 5px; margin-bottom: 5px; color: #E2E8F0;">Si estás usando esta aplicación en la nube (ej. superagenteiapro.com), <code>localhost</code> no funcionará porque hace referencia al servidor en la nube, no a tu ordenador de casa.</p>
+                    <p style="font-size: 12px; margin-top: 0; color: #E2E8F0;">Para conectar tu IA local a esta web, expón el puerto de tu LM Studio/Ollama a internet usando un túnel gratuito como <b><a href="https://ngrok.com/" target="_blank" style="color: #38BDF8;">Ngrok</a></b> o <b>Cloudflare Tunnels</b>, y pega la URL pública generada en el campo <i>Base URL</i>.</p>
+                </div>
+                <div style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; margin-bottom: 12px; border-left: 3px solid #10B981;">
+                    <b style="color: #FFFFFF; font-size: 14px;">🔹 LM Studio</b><br>
+                    <span style="font-size: 12px;">• <b>Base URL (Si app es local):</b> <code style="color: #10B981; background: #0F172A; padding: 2px 5px; border-radius: 4px;">http://localhost:1234/v1</code></span><br>
+                    <span style="font-size: 12px;">• <b>Base URL (Si app está online):</b> URL pública de tu Ngrok + <code>/v1</code></span><br>
+                    <span style="font-size: 12px;">• <b>API Key:</b> <code>lm-studio</code></span>
+                </div>
+                <div style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; margin-bottom: 12px; border-left: 3px solid #10B981;">
+                    <b style="color: #FFFFFF; font-size: 14px;">🔹 Ollama (Modo API)</b><br>
+                    <span style="font-size: 12px;">• <b>Base URL (Si app es local):</b> <code style="color: #10B981; background: #0F172A; padding: 2px 5px; border-radius: 4px;">http://localhost:11434/v1</code></span><br>
+                    <span style="font-size: 12px;">• <b>Model ID:</b> <code>llama3</code> | <code>qwen2.5-coder:3b</code></span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
         with st.form("custom_ai_form", clear_on_submit=True):
             st.markdown("**Conectar nuevo modelo:**")
@@ -489,7 +503,6 @@ def panel_ajustes():
             new_gemini = st.text_input("Gemini API Key",       type="password", value=keys.get("GEMINI_API_KEY", ""))
             new_groq   = st.text_input("Groq API Key",         type="password", value=keys.get("GROQ_API_KEY", ""))
             new_or     = st.text_input("OpenRouter API Key",   type="password", value=keys.get("OPENROUTER_API_KEY", ""))
-            new_hf     = st.text_input("Hugging Face API Key", type="password", value=keys.get("HF_API_KEY", ""))
             new_oai    = st.text_input("OpenAI API Key",       type="password", value=keys.get("OPENAI_API_KEY", ""))
             new_stab   = st.text_input("Stability AI API Key", type="password", value=keys.get("STABILITY_API_KEY", ""))
 
@@ -499,7 +512,6 @@ def panel_ajustes():
                     "GEMINI_API_KEY":     new_gemini or keys.get("GEMINI_API_KEY", ""),
                     "GROQ_API_KEY":       new_groq   or keys.get("GROQ_API_KEY", ""),
                     "OPENROUTER_API_KEY": new_or     or keys.get("OPENROUTER_API_KEY", ""),
-                    "HF_API_KEY":         new_hf     or keys.get("HF_API_KEY", ""),
                     "OPENAI_API_KEY":     new_oai    or keys.get("OPENAI_API_KEY", ""),
                     "STABILITY_API_KEY":  new_stab   or keys.get("STABILITY_API_KEY", ""),
                 }
@@ -509,30 +521,61 @@ def panel_ajustes():
                 st.rerun()
 
     # ------------------------------------------------------------------ #
-    #  TAB 3 — Cuenta y Logout                                            #
+    #  TAB 3 — Cuenta                                                     #
     # ------------------------------------------------------------------ #
     with tab3:
-        st.markdown("""
-        **Sesión activa**
-
-        Tus claves y modelos se persisten de forma encriptada en la base de datos.
-        Al cerrar sesión, la cookie de acceso persistente es eliminada del
-        navegador y del servidor simultáneamente.
-        """)
-        st.divider()
-        st.markdown('<div class="danger-btn">', unsafe_allow_html=True)
-        if st.button("🚶 Cerrar Sesión Segura", use_container_width=True, key="logout_btn"):
-            cookie_manager.delete("auth_token")
-            from src.database import clear_remember_token
-            clear_remember_token(st.session_state.user_id)
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
-            st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
+        from src.database import get_user_profile, change_user_password
+        perfil = get_user_profile(st.session_state.user_id)
+        if perfil:
+            st.markdown(f"**Nombre:** {perfil['first_name']} {perfil['last_name']}")
+            st.markdown(f"**Usuario:** @{perfil['username']}")
+            st.markdown(f"**Email:** {perfil['email']}")
+            st.divider()
+        
+        st.markdown("**Cambiar Contraseña**")
+        with st.form("change_password_form"):
+            old_pass = st.text_input("Contraseña Actual", type="password")
+            new_pass = st.text_input("Nueva Contraseña", type="password")
+            confirm_pass = st.text_input("Confirmar Nueva Contraseña", type="password")
+            
+            if st.form_submit_button("Actualizar Contraseña", type="primary", use_container_width=True):
+                if not old_pass or not new_pass or not confirm_pass:
+                    st.warning("⚠️ Completa todos los campos.")
+                elif new_pass != confirm_pass:
+                    st.error("❌ Las nuevas contraseñas no coinciden.")
+                else:
+                    success, msg = change_user_password(st.session_state.user_id, old_pass, new_pass)
+                    if success:
+                        st.success(f"✅ {msg}")
+                    else:
+                        st.error(f"❌ {msg}")
 
 
 # --- CONFIGURACIÓN DE CHATS EN SIDEBAR ---
 with st.sidebar:
+    from src.database import get_user_profile
+    user_data = get_user_profile(st.session_state.user_id)
+    if user_data:
+        profile_html = f"""
+<div class="user-profile-card">
+    <div class="user-greeting">👋 BIENVENIDO</div>
+    <div class="user-name">{user_data['first_name']} {user_data.get('last_name', '')}</div>
+    <div class="user-handle">@{user_data['username']}</div>
+</div>
+"""
+        st.markdown(profile_html, unsafe_allow_html=True)
+    
+    st.markdown('<div class="danger-btn">', unsafe_allow_html=True)
+    if st.button("🚪 Cerrar Sesión", use_container_width=True, type="primary", key="sidebar_logout"):
+        cookie_manager.delete("auth_token")
+        from src.database import clear_remember_token
+        clear_remember_token(st.session_state.user_id)
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.divider()
+
     st.header("💬 Mis Chats")
     
     if st.button("➕ Nuevo Chat", use_container_width=True):
@@ -572,7 +615,13 @@ with st.sidebar:
             st.rerun()
 
     st.divider()
-    if st.button("⚙️ Centro de Control", use_container_width=True, key="btn_control_center"):
+    if st.button("⚙️ Centro de Control", key="btn_settings", use_container_width=True):
+        st.session_state.show_settings = True
+        st.rerun()
+
+    if st.session_state.show_settings:
+        # IMPORTANTE: El flag se apaga dentro o justo antes de llamar a la función
+        st.session_state.show_settings = False 
         panel_ajustes()
     st.divider()
 
@@ -747,7 +796,7 @@ with st.sidebar:
     motores_disponibles = [
         "Groq Llama 3.3 (Lead Software Engineer / Creador)",
         "Gemini 2.5 Pro (Análisis Multimedia y Arte)",
-        "Ollama Qwen (Desarrollo Local Zero-Trust)",
+        "OpenRouter (Modelos Gratuitos y de Pago)",
         "Groq Whisper (Oídos: Transcripción STT)",
         "OpenAI TTS (Voz: Text-to-Speech)",
         "Generador de Assets (Manos: Texto a Imagen)",
@@ -1135,8 +1184,8 @@ if prompt := st.chat_input("Escribe tu consulta o pídele que genere una imagen.
                         model_name=_matched_custom["model_id"],
                     )
                 else:
-                    if imagen_adjunta: st.warning("⚠️ Ollama ignora imágenes locales.")
-                    provider = get_ollama_provider()
+                    if imagen_adjunta: st.warning("⚠️ OpenRouter ignora imágenes locales.")
+                    provider = get_openrouter_provider()
 
             clean_res = ""
             file_paths = []
