@@ -18,19 +18,27 @@ class FileFactory:
         Ejecuta la herramienta de creación o edición basándose en el JSON.
         Retorna la ruta absoluta del archivo resultante o None si falló.
         """
-        action = tool_data.get("action")
-        filename = tool_data.get("filename", f"file_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}.txt")
-        content = tool_data.get("content", "")
+        import os
+        from pathlib import Path
+        import datetime
+
+        raw_filename = tool_data.get("filename", f"file_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}.txt")
+        # Sanitización estricta: extraer solo el nombre base, eliminando rutas relativas (../)
+        safe_filename = Path(raw_filename).name
+        if not safe_filename or safe_filename.startswith('.'):
+            safe_filename = f"file_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}.txt"
+        filepath = os.path.join(self.output_dir, safe_filename)
         
-        filepath = os.path.join(self.output_dir, filename)
+        action = tool_data.get("action")
+        content = tool_data.get("content", "")
         
         try:
             if action == "create_file":
-                if filename.lower().endswith(".pdf"):
+                if safe_filename.lower().endswith(".pdf"):
                     return self._create_pdf(filepath, content)
-                elif filename.lower().endswith((".xlsx", ".xls")):
+                elif safe_filename.lower().endswith((".xlsx", ".xls")):
                     return self._create_excel(filepath, content)
-                elif filename.lower().endswith(".html"):
+                elif safe_filename.lower().endswith(".html"):
                     return self._create_text(filepath, content)
                 else:
                     return self._create_text(filepath, content)
@@ -345,6 +353,7 @@ class FileFactory:
         Parsea un único bloque de tabla Markdown.
         Retorna (lista_alineaciones, DataFrame) o None si el bloque no es válido.
         """
+        import pandas as pd
         import re
 
         lines = [l.strip() for l in block.strip().splitlines() if l.strip().startswith("|")]

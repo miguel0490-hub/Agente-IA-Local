@@ -2,7 +2,7 @@ import pytest
 from playwright.sync_api import Page, expect
 import os
 
-BASE_URL = "http://localhost:8501"
+BASE_URL = os.getenv("E2E_BASE_URL", "http://localhost:8501")
 
 def test_page_load(page: Page):
     """Verifica que la aplicación carga correctamente."""

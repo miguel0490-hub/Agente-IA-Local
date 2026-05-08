@@ -3,8 +3,27 @@ import os
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from dotenv import load_dotenv
+from src.core.logger import get_logger
 
 load_dotenv()
+logger = get_logger(__name__)
+
+
+def _resolve_app_url() -> str:
+    """
+    Resuelve la URL base pública para links de verificación/reset.
+    Prioridad:
+    1) APP_URL (recomendado en producción)
+    2) STREAMLIT_SERVER_PORT (inyectado por app.py en runtime local)
+    3) Fallback histórico localhost:8501
+    """
+    explicit = (os.getenv("APP_URL") or "").strip()
+    if explicit:
+        return explicit.rstrip("/")
+    runtime_port = (os.getenv("STREAMLIT_SERVER_PORT") or "").strip()
+    if runtime_port:
+        return f"http://localhost:{runtime_port}"
+    return "http://localhost:8501"
 
 def send_verification_email(to_email: str, first_name: str, token: str) -> bool:
     """Envía el correo de verificación con estilo Total Dark Premium."""
@@ -14,11 +33,10 @@ def send_verification_email(to_email: str, first_name: str, token: str) -> bool:
     smtp_password = os.getenv("SMTP_PASSWORD")
 
     if not all([smtp_server, smtp_port, smtp_user, smtp_password]):
-        print("Faltan credenciales SMTP en el archivo .env. No se pudo enviar el correo de verificación.")
+        logger.error("Faltan credenciales SMTP en el archivo .env. No se pudo enviar el correo de verificación.")
         return False
 
-    # URL base de la aplicación. Asumimos localhost:8501 si no hay dominio configurado.
-    base_url = os.getenv("APP_URL", "http://localhost:8501")
+    base_url = _resolve_app_url()
     verification_link = f"{base_url}/?token={token}"
 
     html_content = f"""
@@ -64,7 +82,7 @@ def send_verification_email(to_email: str, first_name: str, token: str) -> bool:
         server.quit()
         return True
     except Exception as e:
-        print(f"Error al enviar correo: {e}")
+        logger.error(f"Error al enviar correo: {e}")
         return False
 
 def send_password_reset_email(to_email: str, first_name: str, token: str) -> bool:
@@ -74,10 +92,10 @@ def send_password_reset_email(to_email: str, first_name: str, token: str) -> boo
     smtp_password = os.getenv("SMTP_PASSWORD")
 
     if not all([smtp_server, smtp_port, smtp_user, smtp_password]):
-        print("Faltan credenciales SMTP en el archivo .env.")
+        logger.error("Faltan credenciales SMTP en el archivo .env.")
         return False
 
-    base_url = os.getenv("APP_URL", "http://localhost:8501")
+    base_url = _resolve_app_url()
     reset_link = f"{base_url}/?reset_token={token}"
 
     html_content = f"""
@@ -119,5 +137,5 @@ def send_password_reset_email(to_email: str, first_name: str, token: str) -> boo
         server.quit()
         return True
     except Exception as e:
-        print(f"Error al enviar correo de reseteo: {e}")
+        logger.error(f"Error al enviar correo de reseteo: {e}")
         return False

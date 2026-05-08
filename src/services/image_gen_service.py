@@ -116,7 +116,7 @@ def generate_image_stability(
             _STABILITY_API_URL,
             headers=headers,
             files=form_data,
-            timeout=60
+            timeout=120
         )
 
         if response.status_code == 200:

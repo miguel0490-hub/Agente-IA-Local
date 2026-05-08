@@ -1,371 +1,433 @@
 """
 src/database.py — Capa de Persistencia de Datos.
-
-Gestiona la conexión con SQLite, el esquema relacional (usuarios, chats,
-mensajes) y todas las transacciones de la aplicación: autenticación,
-encriptación de API Keys vía Fernet, y gestión de sesiones persistentes.
+Migrada a SQLAlchemy con arquitectura dual:
+- PostgreSQL en producción vía DATABASE_URL
+- SQLite local como fallback
 """
-import sqlite3
 import json
 import os
 import uuid
 import bcrypt
+import base64
+import hashlib
 from datetime import datetime
 from cryptography.fernet import Fernet
-from src.core.config import APP_SECRET_KEY
+from sqlalchemy import (
+    create_engine,
+    text,
+    MetaData,
+    Table,
+    Column,
+    Integer,
+    String,
+    Text,
+    DateTime,
+    ForeignKey,
+    func,
+    inspect,
+)
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.exc import IntegrityError
 
-DB_PATH = os.path.join(os.getcwd(), "data", "database.sqlite")
+from src.core.logger import get_logger
+
+logger = get_logger(__name__)
+
+# Configuración Dual (PostgreSQL para Prod, SQLite para Local)
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///data/superagente.db")
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+if DATABASE_URL.startswith("sqlite:///"):
+    os.makedirs("data", exist_ok=True)
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        pool_pre_ping=True,
+    )
+else:
+    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+metadata = MetaData()
+
+users_table = Table(
+    "users",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("first_name", String(255), nullable=False),
+    Column("last_name", String(255), nullable=False),
+    Column("email", String(255), unique=True, nullable=False),
+    Column("username", String(255), unique=True, nullable=False),
+    Column("password_hash", Text, nullable=False),
+    Column("encrypted_api_keys", Text),
+    Column("is_verified", Integer, nullable=False, server_default=text("0")),
+    Column("verification_token", Text),
+    Column("reset_token", Text),
+    Column("remember_token", Text),
+)
+
+chats_table = Table(
+    "chats",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+    Column("title", Text, nullable=False),
+    Column("updated_at", DateTime, server_default=func.now()),
+)
+
+messages_table = Table(
+    "messages",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("chat_id", Integer, ForeignKey("chats.id", ondelete="CASCADE"), nullable=False),
+    Column("role", String(50), nullable=False),
+    Column("content", Text),
+    Column("extra_data", Text),
+)
+
+
+def _is_postgres() -> bool:
+    return engine.dialect.name.startswith("postgresql")
+
+
+def _row_to_dict(row):
+    if not row:
+        return None
+    return dict(row._mapping)
+
 
 def get_connection():
-    """Abre y retorna una conexión a SQLite con foreign keys activadas y Row factory."""
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+    """Abre y retorna una conexión SQLAlchemy."""
+    return engine.connect()
+
 
 def get_cipher():
-    """Retorna un objeto Fernet inicializado con APP_SECRET_KEY para encriptar/desencriptar."""
+    """Retorna un objeto Fernet inicializado con APP_SECRET_KEY."""
+    from src.core.config import APP_SECRET_KEY
     if not APP_SECRET_KEY:
-        raise ValueError("APP_SECRET_KEY no está configurada. No se puede encriptar/desencriptar.")
-    return Fernet(APP_SECRET_KEY.encode())
+        raise ValueError("APP_SECRET_KEY no está configurada.")
+    key_str = APP_SECRET_KEY.strip()
+
+    # Caso ideal: clave Fernet válida (urlsafe base64 de 32 bytes)
+    try:
+        return Fernet(key_str.encode("utf-8"))
+    except Exception:
+        pass
+
+    # Compatibilidad: si llega en otro formato, derivar una clave Fernet estable.
+    logger.warning("APP_SECRET_KEY no tiene formato Fernet válido. Se derivará una clave estable por compatibilidad.")
+    derived_key = base64.urlsafe_b64encode(hashlib.sha256(key_str.encode("utf-8")).digest())
+    return Fernet(derived_key)
+
 
 def init_db():
-    """
-    Inicializa el esquema de la base de datos (idempotente).
-    Crea las tablas users, chats y messages si no existen, y aplica
-    migraciones de columnas opcionales de forma segura.
-    """
-    conn = get_connection()
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        first_name TEXT NOT NULL,
-        last_name TEXT NOT NULL,
-        email TEXT UNIQUE NOT NULL,
-        username TEXT UNIQUE NOT NULL,
-        password_hash TEXT NOT NULL,
-        encrypted_api_keys TEXT,
-        is_verified INTEGER DEFAULT 0,
-        verification_token TEXT
-    )
-    ''')
-    
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS chats (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        title TEXT NOT NULL,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-    )
-    ''')
-    
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        chat_id INTEGER NOT NULL,
-        role TEXT NOT NULL,
-        content TEXT,
-        extra_data TEXT,
-        FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE
-    )
-    ''')
-    
-    # Migraciones seguras de columnas opcionales (idempotentes)
-    migrations = [
-        'ALTER TABLE users ADD COLUMN reset_token TEXT',
-        'ALTER TABLE users ADD COLUMN remember_token TEXT',
-    ]
-    for migration in migrations:
-        try:
-            cursor.execute(migration)
-        except Exception:
-            pass  # La columna ya existe — comportamiento esperado
-
-    conn.commit()
-    conn.close()
+    """Crea tablas y aplica migraciones mínimas compatibles con Postgres/SQLite."""
+    metadata.create_all(engine)
+    try:
+        inspector = inspect(engine)
+        user_cols = {c["name"] for c in inspector.get_columns("users")}
+        with engine.begin() as conn:
+            if "reset_token" not in user_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN reset_token TEXT"))
+            if "remember_token" not in user_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN remember_token TEXT"))
+    except Exception as e:
+        logger.error(f"Error inicializando/migrando base de datos: {e}")
+        raise
 
 
 # --- Autenticación y Usuarios ---
-
 def register_user(first_name, last_name, email, username, password):
-    """
-    Registra un nuevo usuario con password hasheado (bcrypt) y un token de verificación de email.
-    Retorna (True, (user_id, token)) en éxito o (False, mensaje_error) si hay conflicto de unicidad.
-    """
-    conn = get_connection()
-    cursor = conn.cursor()
-    
     salt = bcrypt.gensalt()
-    hashed = bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
+    hashed = bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
     token = uuid.uuid4().hex
-    
     try:
-        cursor.execute("INSERT INTO users (first_name, last_name, email, username, password_hash, encrypted_api_keys, is_verified, verification_token) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", 
-                       (first_name, last_name, email, username, hashed, json.dumps({}), 0, token))
-        conn.commit()
-        user_id = cursor.lastrowid
+        with engine.begin() as conn:
+            if _is_postgres():
+                user_id = conn.execute(
+                    text(
+                        "INSERT INTO users (first_name, last_name, email, username, password_hash, encrypted_api_keys, is_verified, verification_token) "
+                        "VALUES (:first_name, :last_name, :email, :username, :password_hash, :encrypted_api_keys, :is_verified, :verification_token) "
+                        "RETURNING id"
+                    ),
+                    {
+                        "first_name": first_name,
+                        "last_name": last_name,
+                        "email": email,
+                        "username": username,
+                        "password_hash": hashed,
+                        "encrypted_api_keys": json.dumps({}),
+                        "is_verified": 0,
+                        "verification_token": token,
+                    },
+                ).scalar_one()
+            else:
+                conn.execute(
+                    text(
+                        "INSERT INTO users (first_name, last_name, email, username, password_hash, encrypted_api_keys, is_verified, verification_token) "
+                        "VALUES (:first_name, :last_name, :email, :username, :password_hash, :encrypted_api_keys, :is_verified, :verification_token)"
+                    ),
+                    {
+                        "first_name": first_name,
+                        "last_name": last_name,
+                        "email": email,
+                        "username": username,
+                        "password_hash": hashed,
+                        "encrypted_api_keys": json.dumps({}),
+                        "is_verified": 0,
+                        "verification_token": token,
+                    },
+                )
+                user_id = conn.execute(
+                    text("SELECT id FROM users WHERE username = :username"),
+                    {"username": username},
+                ).scalar_one()
         return True, (user_id, token)
-    except sqlite3.IntegrityError as e:
-        if "email" in str(e).lower():
+    except IntegrityError as e:
+        err = str(e).lower()
+        if "email" in err:
             return False, "El correo electrónico ya está registrado."
         return False, "El nombre de usuario ya existe."
-    finally:
-        conn.close()
+    except Exception as e:
+        logger.error(f"Error registrando usuario '{username}': {e}")
+        return False, "No se pudo completar el registro."
+
 
 def verify_user_token(token):
-    """Activa la cuenta del usuario verificando el token de email. Retorna True si el token es válido."""
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id FROM users WHERE verification_token = ?", (token,))
-    row = cursor.fetchone()
-    if row:
-        cursor.execute("UPDATE users SET is_verified = 1, verification_token = NULL WHERE id = ?", (row['id'],))
-        conn.commit()
-        conn.close()
-        return True
-    conn.close()
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT id FROM users WHERE verification_token = :token"),
+            {"token": token},
+        ).fetchone()
+        if row:
+            conn.execute(
+                text("UPDATE users SET is_verified = 1, verification_token = NULL WHERE id = :user_id"),
+                {"user_id": row._mapping["id"]},
+            )
+            return True
     return False
 
 
 def verify_login(username, password):
-    """Verifica credenciales y estado de verificación. Retorna (True, user_id) o (False, mensaje)."""
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, password_hash, is_verified FROM users WHERE username = ?", (username,))
-    row = cursor.fetchone()
-    conn.close()
-    
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT id, password_hash, is_verified FROM users WHERE username = :username"),
+            {"username": username},
+        ).fetchone()
     if row:
-        if bcrypt.checkpw(password.encode('utf-8'), row['password_hash'].encode('utf-8')):
-            if row['is_verified'] == 0:
+        if bcrypt.checkpw(password.encode("utf-8"), row._mapping["password_hash"].encode("utf-8")):
+            if row._mapping["is_verified"] == 0:
                 return False, "Tu cuenta no está verificada. Por favor, revisa tu correo electrónico para activarla."
-            return True, row['id']
+            return True, row._mapping["id"]
     return False, "Usuario o contraseña incorrectos."
 
+
 def get_user_profile(user_id):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT first_name, last_name, email, username FROM users WHERE id = ?", (user_id,))
-    row = cursor.fetchone()
-    conn.close()
-    if row:
-        return dict(row)
-    return {}
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT first_name, last_name, email, username FROM users WHERE id = :user_id"),
+            {"user_id": user_id},
+        ).fetchone()
+    return _row_to_dict(row) or {}
+
 
 def change_user_password(user_id, old_password, new_password):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT password_hash FROM users WHERE id = ?", (user_id,))
-    row = cursor.fetchone()
-    
-    if not row:
-        conn.close()
-        return False, "Usuario no encontrado."
-        
-    if not bcrypt.checkpw(old_password.encode('utf-8'), row['password_hash'].encode('utf-8')):
-        conn.close()
-        return False, "La contraseña actual es incorrecta."
-        
-    salt = bcrypt.gensalt()
-    hashed = bcrypt.hashpw(new_password.encode('utf-8'), salt).decode('utf-8')
-    
-    cursor.execute("UPDATE users SET password_hash = ? WHERE id = ?", (hashed, user_id))
-    conn.commit()
-    conn.close()
-    return True, "Contraseña actualizada con éxito."
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT password_hash FROM users WHERE id = :user_id"),
+            {"user_id": user_id},
+        ).fetchone()
+        if not row:
+            return False, "Usuario no encontrado."
+        if not bcrypt.checkpw(old_password.encode("utf-8"), row._mapping["password_hash"].encode("utf-8")):
+            return False, "La contraseña actual es incorrecta."
+        hashed = bcrypt.hashpw(new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+        conn.execute(
+            text("UPDATE users SET password_hash = :password_hash WHERE id = :user_id"),
+            {"password_hash": hashed, "user_id": user_id},
+        )
+        return True, "Contraseña actualizada con éxito."
+
 
 def update_api_keys(user_id, api_keys_dict):
     cipher = get_cipher()
-    json_str = json.dumps(api_keys_dict)
-    encrypted = cipher.encrypt(json_str.encode('utf-8')).decode('utf-8')
+    encrypted = cipher.encrypt(json.dumps(api_keys_dict).encode("utf-8")).decode("utf-8")
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE users SET encrypted_api_keys = :encrypted WHERE id = :user_id"),
+            {"encrypted": encrypted, "user_id": user_id},
+        )
 
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("UPDATE users SET encrypted_api_keys = ? WHERE id = ?", (encrypted, user_id))
-    conn.commit()
-    conn.close()
 
 def get_user_api_keys(user_id):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT encrypted_api_keys FROM users WHERE id = ?", (user_id,))
-    row = cursor.fetchone()
-    conn.close()
-    
-    if row and row['encrypted_api_keys']:
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT encrypted_api_keys FROM users WHERE id = :user_id"),
+            {"user_id": user_id},
+        ).fetchone()
+    encrypted = row._mapping["encrypted_api_keys"] if row else None
+    if encrypted:
         try:
             cipher = get_cipher()
-            decrypted = cipher.decrypt(row['encrypted_api_keys'].encode('utf-8')).decode('utf-8')
+            decrypted = cipher.decrypt(encrypted.encode("utf-8")).decode("utf-8")
             return json.loads(decrypted)
-        except Exception as e:
-            print(f"Error desencriptando API keys: {e}")
+        except Exception:
+            logger.error(f"Error interno desencriptando API keys para el usuario {user_id}")
             return {}
     return {}
 
-# --- Chats y Mensajes ---
 
+# --- Chats y Mensajes ---
 def create_chat(user_id, title="Nuevo Chat"):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO chats (user_id, title, updated_at) VALUES (?, ?, ?)", 
-                   (user_id, title, datetime.now()))
-    conn.commit()
-    chat_id = cursor.lastrowid
-    conn.close()
+    with engine.begin() as conn:
+        if _is_postgres():
+            chat_id = conn.execute(
+                text(
+                    "INSERT INTO chats (user_id, title, updated_at) VALUES (:user_id, :title, :updated_at) RETURNING id"
+                ),
+                {"user_id": user_id, "title": title, "updated_at": datetime.now()},
+            ).scalar_one()
+        else:
+            conn.execute(
+                text("INSERT INTO chats (user_id, title, updated_at) VALUES (:user_id, :title, :updated_at)"),
+                {"user_id": user_id, "title": title, "updated_at": datetime.now()},
+            )
+            chat_id = conn.execute(
+                text("SELECT id FROM chats WHERE user_id = :user_id ORDER BY id DESC LIMIT 1"),
+                {"user_id": user_id},
+            ).scalar_one()
     return chat_id
 
+
 def delete_chat(chat_id):
-    """Elimina un chat y todos sus mensajes en cascada."""
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM messages WHERE chat_id = ?", (chat_id,))
-    cursor.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
-    conn.commit()
-    conn.close()
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM messages WHERE chat_id = :chat_id"), {"chat_id": chat_id})
+        conn.execute(text("DELETE FROM chats WHERE id = :chat_id"), {"chat_id": chat_id})
+
 
 def update_chat_title(chat_id, new_title):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "UPDATE chats SET title = ?, updated_at = ? WHERE id = ?",
-        (new_title, datetime.now(), chat_id)
-    )
-    conn.commit()
-    conn.close()
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE chats SET title = :title, updated_at = :updated_at WHERE id = :chat_id"),
+            {"title": new_title, "updated_at": datetime.now(), "chat_id": chat_id},
+        )
+
 
 def get_user_chats(user_id):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, title, updated_at FROM chats WHERE user_id = ? ORDER BY updated_at DESC", (user_id,))
-    rows = cursor.fetchall()
-    conn.close()
-    return [dict(row) for row in rows]
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text("SELECT id, title, updated_at FROM chats WHERE user_id = :user_id ORDER BY updated_at DESC"),
+            {"user_id": user_id},
+        ).fetchall()
+    return [dict(r._mapping) for r in rows]
+
 
 def get_chat_messages(chat_id):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT role, content, extra_data FROM messages WHERE chat_id = ? ORDER BY id ASC", (chat_id,))
-    rows = cursor.fetchall()
-    conn.close()
-    
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text("SELECT role, content, extra_data FROM messages WHERE chat_id = :chat_id ORDER BY id ASC"),
+            {"chat_id": chat_id},
+        ).fetchall()
+
     messages = []
     for row in rows:
-        msg = {
-            "role": row['role'],
-            "content": row['content']
-        }
-        if row['extra_data']:
+        msg = {"role": row._mapping["role"], "content": row._mapping["content"]}
+        if row._mapping["extra_data"]:
             try:
-                extra = json.loads(row['extra_data'])
-                msg.update(extra)
-            except:
-                pass
+                msg.update(json.loads(row._mapping["extra_data"]))
+            except Exception:
+                logger.error(f"Error parseando extra_data del chat {chat_id}")
         messages.append(msg)
     return messages
 
+
 def save_chat_messages(chat_id, messages):
-    """Reemplaza los mensajes de un chat por la nueva lista."""
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM messages WHERE chat_id = ?", (chat_id,))
-    
-    for msg in messages:
-        # Separar content y role del resto de datos
-        role = msg.get("role", "unknown")
-        content = msg.get("content", "")
-        extra_data = {k: v for k, v in msg.items() if k not in ("role", "content")}
-        extra_json = json.dumps(extra_data) if extra_data else None
-        
-        cursor.execute("INSERT INTO messages (chat_id, role, content, extra_data) VALUES (?, ?, ?, ?)",
-                       (chat_id, role, content, extra_json))
-                       
-    cursor.execute("UPDATE chats SET updated_at = ? WHERE id = ?", (datetime.now(), chat_id))
-    conn.commit()
-    conn.close()
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM messages WHERE chat_id = :chat_id"), {"chat_id": chat_id})
+        for msg in messages:
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")
+            extra_data = {k: v for k, v in msg.items() if k not in ("role", "content")}
+            extra_json = json.dumps(extra_data) if extra_data else None
+            conn.execute(
+                text(
+                    "INSERT INTO messages (chat_id, role, content, extra_data) "
+                    "VALUES (:chat_id, :role, :content, :extra_data)"
+                ),
+                {"chat_id": chat_id, "role": role, "content": content, "extra_data": extra_json},
+            )
+        conn.execute(
+            text("UPDATE chats SET updated_at = :updated_at WHERE id = :chat_id"),
+            {"updated_at": datetime.now(), "chat_id": chat_id},
+        )
+
 
 # --- Remember Me (Token de Sesión Persistente) ---
-
 def update_remember_token(user_id: int, token: str) -> None:
-    """Persiste el token de 'Recuérdame' para el usuario dado."""
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("UPDATE users SET remember_token = ? WHERE id = ?", (token, user_id))
-    conn.commit()
-    conn.close()
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE users SET remember_token = :token WHERE id = :user_id"),
+            {"token": token, "user_id": user_id},
+        )
+
 
 def clear_remember_token(user_id: int) -> None:
-    """Elimina el token persistente del usuario (logout o cambio de dispositivo)."""
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("UPDATE users SET remember_token = NULL WHERE id = ?", (user_id,))
-    conn.commit()
-    conn.close()
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE users SET remember_token = NULL WHERE id = :user_id"),
+            {"user_id": user_id},
+        )
+
 
 def verify_remember_token(token: str) -> int | None:
-    """
-    Verifica el token de sesión persistente.
-    Retorna el user_id si el token existe y es válido, None en caso contrario.
-    """
     if not token:
         return None
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id FROM users WHERE remember_token = ?", (token,))
-    row = cursor.fetchone()
-    conn.close()
-    return row['id'] if row else None
-
-
-# Inicializar la base de datos al importar el módulo
-init_db()
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT id FROM users WHERE remember_token = :token"),
+            {"token": token},
+        ).fetchone()
+    return row._mapping["id"] if row else None
 
 
 def generate_password_reset_token(email):
-    """
-    Genera un token UUID para el flujo de recuperación de contraseña por email.
-    Retorna (True, first_name, token) si el email existe, o (False, None, None).
-    """
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT first_name FROM users WHERE email = ?", (email,))
-    row = cursor.fetchone()
-    if not row:
-        conn.close()
-        return False, None, None
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT first_name FROM users WHERE email = :email"),
+            {"email": email},
+        ).fetchone()
+        if not row:
+            return False, None, None
+        token = uuid.uuid4().hex
+        conn.execute(
+            text("UPDATE users SET reset_token = :token WHERE email = :email"),
+            {"token": token, "email": email},
+        )
+        return True, row._mapping["first_name"], token
 
-    token = uuid.uuid4().hex
-    cursor.execute("UPDATE users SET reset_token = ? WHERE email = ?", (token, email))
-    conn.commit()
-    conn.close()
-    return True, row['first_name'], token
 
 def verify_reset_token(token):
-    """Valida un token de reset de contraseña. Retorna (True, user_id) o (False, None)."""
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, email FROM users WHERE reset_token = ?", (token,))
-    row = cursor.fetchone()
-    conn.close()
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT id, email FROM users WHERE reset_token = :token"),
+            {"token": token},
+        ).fetchone()
     if row:
-        return True, row['id']
+        return True, row._mapping["id"]
     return False, None
 
+
 def update_password_with_token(token, new_password):
-    """Actualiza la contraseña usando un token válido y lo invalida tras el uso."""
     success, user_id = verify_reset_token(token)
     if not success:
         return False, "Token inválido o expirado."
 
-    salt = bcrypt.gensalt()
-    hashed = bcrypt.hashpw(new_password.encode('utf-8'), salt).decode('utf-8')
-
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("UPDATE users SET password_hash = ?, reset_token = NULL WHERE id = ?", (hashed, user_id))
-    conn.commit()
-    conn.close()
+    hashed = bcrypt.hashpw(new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE users SET password_hash = :password_hash, reset_token = NULL WHERE id = :user_id"),
+            {"password_hash": hashed, "user_id": user_id},
+        )
     return True, "Contraseña actualizada con éxito."

@@ -359,7 +359,9 @@ ESTILOS_CSS = f"""
     button[kind="primary"],
     button[kind="secondary"],
     button[kind="formSubmit"],
-    div[data-testid="stFileUploader"] button {{
+    button[data-testid^="stBaseButton-"],
+    div[data-testid="stFormSubmitButton"] > button,
+    div[data-testid="stButton"] > button {{
         background: linear-gradient(90deg, #00F2FE, #4FACFE) !important;
         background-color: #00F2FE !important;
         border: none !important;
@@ -371,7 +373,9 @@ ESTILOS_CSS = f"""
     button[kind="primary"], button[kind="primary"] *,
     button[kind="secondary"], button[kind="secondary"] *,
     button[kind="formSubmit"], button[kind="formSubmit"] *,
-    div[data-testid="stFileUploader"] button, div[data-testid="stFileUploader"] button * {{
+    button[data-testid^="stBaseButton-"], button[data-testid^="stBaseButton-"] *,
+    div[data-testid="stFormSubmitButton"] > button, div[data-testid="stFormSubmitButton"] > button *,
+    div[data-testid="stButton"] > button, div[data-testid="stButton"] > button * {{
         color: #0F172A !important;
         -webkit-text-fill-color: #0F172A !important;
         fill: #0F172A !important;
@@ -382,7 +386,9 @@ ESTILOS_CSS = f"""
     button[kind="primary"]:hover,
     button[kind="secondary"]:hover,
     button[kind="formSubmit"]:hover,
-    div[data-testid="stFileUploader"] button:hover {{
+    button[data-testid^="stBaseButton-"]:hover,
+    div[data-testid="stFormSubmitButton"] > button:hover,
+    div[data-testid="stButton"] > button:hover {{
         transform: translateY(-2px) !important;
         box-shadow: 0 6px 20px rgba(0, 242, 254, 0.5) !important;
         filter: brightness(1.1) !important;
@@ -448,6 +454,9 @@ ESTILOS_CSS = f"""
         padding: {Spacing.PADDING_MD} !important;
         border-radius: {Spacing.BORDER_RADIUS_SM} !important;
         border: 2px dashed {Colors.GLASS_BORDER} !important;
+        position: relative !important;
+        z-index: auto !important;
+        pointer-events: auto !important;
         transition: all 0.3s ease;
     }}
     [data-testid="stFileUploader"]:hover {{

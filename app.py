@@ -3,8 +3,14 @@ import os
 import sys
 import json
 import time
+import datetime
 
 st.set_page_config(page_title="SuperAgente IA Pro", page_icon="⚡", layout="wide", initial_sidebar_state="expanded")
+
+# Publica el puerto actual para servicios que generan URLs externas (emails, callbacks).
+# APP_URL tiene prioridad si está definido explícitamente para producción.
+if not os.getenv("APP_URL"):
+    os.environ["STREAMLIT_SERVER_PORT"] = str(st.get_option("server.port"))
 
 from src.database import (
     register_user, verify_login, update_api_keys, get_user_api_keys,
@@ -17,6 +23,26 @@ from PIL import Image
 from src.core.intent_parser import parse_intent
 from src.core.ui_helpers import render_download_button
 import extra_streamlit_components as stx
+
+# --- INICIALIZACIÓN DE DB Y GARBAGE COLLECTOR ---
+from src.database import init_db
+init_db()  # Inicialización controlada (Idempotente)
+
+def run_garbage_collector():
+    """Elimina archivos temporales generados hace más de 24 horas."""
+    import time
+    now = time.time()
+    for directory in [CARPETA_IMAGENES, "data/temp"]:
+        if os.path.exists(directory):
+            for filename in os.listdir(directory):
+                filepath = os.path.join(directory, filename)
+                if os.path.isfile(filepath) and os.stat(filepath).st_mtime < now - 86400:
+                    try: os.remove(filepath)
+                    except: pass
+
+if "gc_run" not in st.session_state:
+    run_garbage_collector()
+    st.session_state.gc_run = True
 
 # CookieManager en session_state para evitar CachedWidgetWarning en Streamlit moderno.
 if "cookie_manager" not in st.session_state:
@@ -69,6 +95,8 @@ if not st.session_state.user_id:
             if _keys:
                 st.session_state.onboarding_done = True
             st.rerun()
+        else:
+            cookie_manager.delete("auth_token")  # Limpia token corrupto o expirado
 
 # --- VERIFICACIÓN DE TOKEN EN URL ---
 if "token" in st.query_params:
@@ -132,10 +160,16 @@ if not st.session_state.user_id:
                                 import uuid
                                 _token = uuid.uuid4().hex
                                 update_remember_token(result, _token)
-                                # max_age en segundos: 30 días
+                                # Calcular expiración a 7 días
+                                expires_date = datetime.datetime.now() + datetime.timedelta(days=7)
+                                # Guardar cookie con hardening
                                 cookie_manager.set(
-                                    "auth_token", _token,
-                                    max_age=30 * 24 * 60 * 60
+                                    "auth_token",
+                                    _token,
+                                    expires_at=expires_date,
+                                    key="set_auth_cookie",
+                                    secure=True,
+                                    same_site="Lax",
                                 )
                             else:
                                 # Limpia cualquier cookie previa si el usuario no quiere persistencia
@@ -169,7 +203,7 @@ if not st.session_state.user_id:
                         st.error("Las contraseñas no coinciden.")
                     else:
                         import re
-                        if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
+                        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email):
                             st.error("Por favor, introduce un correo electrónico válido.")
                         else:
                             success, result = register_user(first_name, last_name, email, new_username, new_password)
@@ -554,13 +588,19 @@ def panel_ajustes():
 # --- CONFIGURACIÓN DE CHATS EN SIDEBAR ---
 with st.sidebar:
     from src.database import get_user_profile
+    import html
+
     user_data = get_user_profile(st.session_state.user_id)
     if user_data:
+        safe_first = html.escape(user_data.get('first_name', 'Usuario'))
+        safe_last = html.escape(user_data.get('last_name', ''))
+        safe_user = html.escape(user_data.get('username', 'user'))
+
         profile_html = f"""
 <div class="user-profile-card">
     <div class="user-greeting">👋 BIENVENIDO</div>
-    <div class="user-name">{user_data['first_name']} {user_data.get('last_name', '')}</div>
-    <div class="user-handle">@{user_data['username']}</div>
+    <div class="user-name">{safe_first} {safe_last}</div>
+    <div class="user-handle">@{safe_user}</div>
 </div>
 """
         st.markdown(profile_html, unsafe_allow_html=True)
@@ -645,29 +685,12 @@ def get_roles():
 def cambiar_rol():
     nuevo_rol = st.session_state.selector_rol
     if nuevo_rol != st.session_state.rol_activo:
-        provider = get_groq_provider()
-        historial_texto = "\\n".join([f"{m['role']}: {m.get('content', '')}" for m in st.session_state.messages])
-        
-        if len(historial_texto.strip()) > 0 and st.session_state.api_keys.get("GROQ_API_KEY"):
-            prompt_resumen = f"Resume este historial de chat en un solo párrafo conciso para darle contexto al siguiente agente de IA sobre qué está construyendo o discutiendo el usuario. Historial:\\n{historial_texto}"
-            try:
-                resumen_chunks = list(provider.stream_chat(prompt_resumen, []))
-                resumen = "".join(resumen_chunks)
-                if "❌" in resumen:
-                    resumen = "El usuario cambió de rol para continuar el proyecto."
-            except:
-                resumen = "El usuario cambió de rol."
-                
-            st.session_state.messages = []
-            st.session_state.messages.append({"role": "user", "content": f"*(Contexto transferido del rol anterior):* {resumen}"})
-        else:
-            st.session_state.messages = []
-            
+        st.session_state.messages = []
+        st.session_state.messages.append({"role": "system", "content": f"El usuario ha cambiado el rol del agente a: {nuevo_rol}."})
         if "App Builder" in nuevo_rol:
-            st.session_state.motor_activo_idx = 0 
+            st.session_state.motor_activo_idx = 0
         elif "UI/UX" in nuevo_rol:
-            st.session_state.motor_activo_idx = 1 
-            
+            st.session_state.motor_activo_idx = 1
         if st.session_state.chat_id:
             guardar_memoria(st.session_state.chat_id, st.session_state.messages, st.session_state.api_keys)
         st.session_state.rol_activo = nuevo_rol
@@ -1026,6 +1049,12 @@ for msg in st.session_state.messages:
 if prompt := st.chat_input("Escribe tu consulta o pídele que genere una imagen..."):
     st.session_state.auto_close_sidebar = True
     
+    # --- RATE LIMITING ---
+    from src.core.security import check_rate_limit
+    if not check_rate_limit(st.session_state.user_id, limit=10, window_seconds=60):
+        st.error("⏳ Has superado el límite de mensajes por minuto. Por favor, espera un momento para evitar saturar los servicios de IA.")
+        st.stop()
+    
     # --- AUTO-RENOMBRADO DE CHAT ---
     renamed = False
     from src.database import get_user_chats, update_chat_title
@@ -1161,31 +1190,14 @@ if prompt := st.chat_input("Escribe tu consulta o pídele que genere una imagen.
                             status.update(label=f"✅ Vídeo procesado con éxito en {int(time.time() - start_time)}s", state="complete", expanded=False)
                         carga_util.append(video_file)
                     finally:
-                        if os.path.exists(video_adjunto_path):
+                        if video_adjunto_path and os.path.exists(video_adjunto_path):
                             os.remove(video_adjunto_path)
-
-                provider = get_gemini_provider()
-            elif "Groq" in motor:
-                if imagen_adjunta: st.warning("⚠️ Este motor ignora imágenes locales.")
-                provider = get_groq_provider()
             else:
-                # Detectar si el motor seleccionado es un modelo personalizado
-                _custom_models_cfg = st.session_state.api_keys.get("CUSTOM_MODELS", [])
-                _matched_custom = next(
-                    (cm for cm in _custom_models_cfg if f"🤖 {cm['name']}" == motor),
-                    None
-                )
-                if _matched_custom:
-                    if imagen_adjunta: st.warning("⚠️ Los modelos personalizados ignoran imágenes locales.")
-                    from src.services.llm_provider import CustomOpenAIProvider
-                    provider = CustomOpenAIProvider(
-                        base_url=_matched_custom["base_url"],
-                        api_key=_matched_custom["api_key"],
-                        model_name=_matched_custom["model_id"],
-                    )
-                else:
-                    if imagen_adjunta: st.warning("⚠️ OpenRouter ignora imágenes locales.")
-                    provider = get_openrouter_provider()
+                if imagen_adjunta: st.warning("⚠️ Este motor no soporta análisis de imágenes locales.")
+
+            # Instanciación limpia a través de la factoría
+            from src.services.llm_provider import LLMFactory
+            provider = LLMFactory.get_provider(motor_name=motor, api_keys=st.session_state.api_keys)
 
             clean_res = ""
             file_paths = []
@@ -1211,7 +1223,11 @@ if prompt := st.chat_input("Escribe tu consulta o pídele que genere una imagen.
                     if "Groq" in motor:
                         res_placeholder.empty()
                         st.warning(f"⚠️ El motor primario (Groq) falló ({str(e)}). Redirigiendo a Gemini...")
-                        provider_backup = get_gemini_provider()
+                        from src.services.llm_provider import LLMFactory
+                        provider_backup = LLMFactory.get_provider(
+                            motor_name="Gemini (Fallback)",
+                            api_keys=st.session_state.api_keys
+                        )
                         carga_util = [prompt_final]
                         if imagen_adjunta: carga_util.append(imagen_adjunta)
                         
@@ -1245,7 +1261,7 @@ if prompt := st.chat_input("Escribe tu consulta o pídele que genere una imagen.
                         
                     st.info("💻 Ejecución de código local completada.")
                     st.session_state.messages.append({"role": "assistant", "content": clean_res})
-                    msg_sistema = f"RESULTADO DE LA EJECUCIÓN (STDOUT/STDERR):\\n{resultado_ejecucion}\\n\\nPor favor, usa esta salida para responder al usuario o continuar tu tarea."
+                    msg_sistema = f"RESULTADO DE LA EJECUCIÓN (STDOUT/STDERR):\n{resultado_ejecucion}\n\nPor favor, usa esta salida para responder al usuario o continuar tu tarea."
                     st.session_state.messages.append({"role": "user", "content": msg_sistema})
                     
                     if "Gemini" in motor: carga_util = [msg_sistema]
@@ -1264,8 +1280,8 @@ if prompt := st.chat_input("Escribe tu consulta o pídele que genere una imagen.
                     st.info(f"🧠 Consulta RAG completada: {len(resultados)} fragmentos encontrados.")
                     st.session_state.messages.append({"role": "assistant", "content": clean_res})
                     if resultados:
-                        res_texto = "\\n\\n".join([f"📄 {r['filename']}:\\n{r['content']}..." for r in resultados])
-                        msg_sistema = f"RESULTADOS DEL CEREBRO RAG PARA '{query}':\\n{res_texto}\\n\\nUsa esta información parcial para responder."
+                        res_texto = "\n\n".join([f"📄 {r['filename']}:\n{r['content']}..." for r in resultados])
+                        msg_sistema = f"RESULTADOS DEL CEREBRO RAG PARA '{query}':\n{res_texto}\n\nUsa esta información parcial para responder."
                     else:
                         msg_sistema = f"El Cerebro RAG no encontró resultados relevantes para '{query}'."
                         
@@ -1284,7 +1300,7 @@ if prompt := st.chat_input("Escribe tu consulta o pídele que genere una imagen.
                         
                     st.info(f"🌐 Búsqueda web completada: {query}")
                     st.session_state.messages.append({"role": "assistant", "content": clean_res})
-                    msg_sistema = f"RESULTADOS DE BÚSQUEDA PARA '{query}':\\n{resultados_web}\\n\\nPor favor, usa esta información para generar la respuesta definitiva o el documento."
+                    msg_sistema = f"RESULTADOS DE BÚSQUEDA PARA '{query}':\n{resultados_web}\n\nPor favor, usa esta información para generar la respuesta definitiva o el documento."
                     st.session_state.messages.append({"role": "user", "content": msg_sistema})
                     
                     if "Gemini" in motor: carga_util = [msg_sistema]

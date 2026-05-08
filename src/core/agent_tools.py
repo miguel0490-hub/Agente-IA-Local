@@ -1,188 +1,80 @@
 import json
 import re
+from pydantic import BaseModel, ValidationError
+from typing import Optional
+from src.core.logger import get_logger
+
+logger = get_logger(__name__)
+
+
+class ToolCallModel(BaseModel):
+    """Esquema estricto de las herramientas permitidas."""
+    action: str
+    filename: Optional[str] = None
+    content: Optional[str] = None
+    search: Optional[str] = None
+    replace: Optional[str] = None
+    query: Optional[str] = None
+    language: Optional[str] = None
+    code: Optional[str] = None
+    suggested_format: Optional[str] = None
+
+
+class ToolValidator:
+    """Capa de Autorización y Permisos (Tool Permission Layer)."""
+    ALLOWED_ACTIONS = {"create_file", "edit_file", "search_web", "open_converter", "execute_code", "query_rag"}
+
+    @staticmethod
+    def authorize(tool_data: dict) -> Optional[dict]:
+        try:
+            validated = ToolCallModel(**tool_data)
+            if validated.action not in ToolValidator.ALLOWED_ACTIONS:
+                logger.warning(f"[SECURITY] Acción bloqueada por no estar en Allowlist: {validated.action}")
+                return None
+            return validated.model_dump(exclude_none=True)
+        except ValidationError as e:
+            logger.error(f"[VALIDATION ERROR] JSON no cumple el esquema: {e}")
+            return None
 
 
 def parse_tool_calls(text: str) -> tuple[str, list]:
-    """
-    Busca bloques JSON marcados como llamadas a herramientas en el texto del LLM.
-    Retorna el texto limpio (sin los bloques JSON) y la lista de herramientas a ejecutar.
-
-    ARQUITECTURA DEL PARSER (por capas, del más estricto al más permisivo):
-      1. json.loads() estándar
-      2. Sanitización de control chars + json.loads()
-      3. Extracción manual robusta (para HTML con {}, comillas y \\n reales)
-    """
+    """Extrae llamadas a herramientas usando JSON estricto."""
     tools_to_run = []
     clean_text = text
 
-    # Captura TODO entre ```json y ``` (incluyendo {} del CSS y saltos de línea)
     pattern = r"```json\s*([\s\S]*?)```"
     matches = list(re.finditer(pattern, text))
 
     for match in matches:
         raw_block = match.group(1).strip()
-        data = _robust_parse(raw_block)
-
-        if not data:
-            continue
-        action = data.get("action")
-        if action not in ("create_file", "edit_file", "search_web", "open_converter"):
-            continue
-
-        # Limpiar la clave interna de diagnóstico antes de almacenar
-        data.pop("_recovered", None)
-        tools_to_run.append(data)
-        if action == "search_web":
-            aviso = f"\n> 🌐 **Búsqueda Web Solicitada:** `{data.get('query', '')}`\n"
-        else:
-            aviso = (
-                f"\n> 🛠️ **Herramienta Ejecutada:** "
-                f"`{action}` en `{data.get('filename', 'archivo')}`\n"
-            )
-        clean_text = clean_text.replace(match.group(0), aviso)
-
-    # ── CAPA 2: Fallback para JSON sin fences (cuando el LLM omite las marcas) ──
-    if not tools_to_run:
-        # Intentamos extraer lo que haya entre la primera { y la última } que contenga una action válida
-        first_brace = text.find('{')
-        last_brace = text.rfind('}')
+        raw_block = raw_block.replace("\n", "\\n").replace("\\\\n", "\\n")
         
-        if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
-            raw_block = text[first_brace:last_brace+1]
-            # Verificamos que parezca una tool antes de intentar el parseo pesado
-            if '"action"' in raw_block and any(a in raw_block for a in ("create_file", "edit_file", "search_web", "open_converter")):
-                data = _robust_parse(raw_block)
-                if data:
-                    action = data.get("action")
-                    if action in ("create_file", "edit_file", "search_web", "open_converter"):
-                        data.pop("_recovered", None)
-                        tools_to_run.append(data)
-                        if action == "search_web":
-                            aviso = f"\n> 🌐 **Búsqueda Web Solicitada:** `{data.get('query', '')}`\n"
-                        else:
-                            aviso = (
-                                f"\n> 🛠️ **Herramienta Ejecutada:** "
-                                f"`{action}` en `{data.get('filename', 'archivo')}`\n"
-                            )
-                        clean_text = clean_text.replace(raw_block, aviso)
+        try:
+            data = json.loads(raw_block, strict=False)
+            # Si no es objeto JSON, no lo tratamos como tool-call y se conserva intacto.
+            if not isinstance(data, dict):
+                continue
+
+            # Solo intentamos autorización cuando hay intención explícita de tool-call.
+            if "action" not in data:
+                continue
+
+            authorized_tool = ToolValidator.authorize(data)
+
+            if authorized_tool:
+                tools_to_run.append(authorized_tool)
+                action = authorized_tool.get("action")
+                if action == "search_web":
+                    aviso = f"\n> 🌐 **Búsqueda Web Autorizada:** `{authorized_tool.get('query', '')}`\n"
+                else:
+                    aviso = f"\n> 🛠️ **Herramienta Autorizada:** `{action}`\n"
+                clean_text = clean_text.replace(match.group(0), aviso)
+            else:
+                # Si fue rechazado por permisos/validación, mantenemos el contenido original
+                # para no ocultar información útil del chat.
+                continue
+        except json.JSONDecodeError:
+            # No sobrescribir JSON informativo o ejemplos malformados del modelo.
+            continue
 
     return clean_text, tools_to_run
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Capas del parser
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _robust_parse(json_str: str) -> dict | None:
-    """Intenta parsear el bloque JSON por tres métodos en cascada."""
-
-    # Capa 1: JSON estándar (caso feliz)
-    try:
-        return json.loads(json_str)
-    except (json.JSONDecodeError, ValueError):
-        pass
-
-    # Capa 2: Sanitizar caracteres de control dentro de strings y reintentar.
-    # El LLM introduce saltos de línea REALES dentro de los valores string del JSON
-    # (e.g. el HTML en "content"), lo cual es inválido en JSON estricto.
-    try:
-        sanitized = _sanitize_json_control_chars(json_str)
-        return json.loads(sanitized)
-    except (json.JSONDecodeError, ValueError):
-        pass
-
-    # Capa 3: Extracción manual. Usada cuando el HTML tiene caracteres que
-    # rompen incluso la sanitización (comillas no escapadas, etc.)
-    return _manual_extract(json_str)
-
-
-def _sanitize_json_control_chars(json_str: str) -> str:
-    """
-    Recorre el JSON carácter a carácter y escapa los caracteres de control
-    (\\n, \\r, \\t reales) que aparezcan DENTRO de un string JSON.
-    Respeta las comillas escapadas (\\\") para no confundirlas con delimitadores.
-    """
-    result = []
-    in_string = False
-    i = 0
-    n = len(json_str)
-
-    while i < n:
-        ch = json_str[i]
-
-        # Detectar entrada/salida de string (respetando escapes)
-        if ch == '"' and (i == 0 or json_str[i - 1] != "\\"):
-            in_string = not in_string
-            result.append(ch)
-        elif in_string:
-            if ch == "\n":
-                result.append("\\n")
-            elif ch == "\r":
-                result.append("\\r")
-            elif ch == "\t":
-                result.append("\\t")
-            else:
-                result.append(ch)
-        else:
-            result.append(ch)
-        i += 1
-
-    return "".join(result)
-
-
-def _manual_extract(json_str: str) -> dict | None:
-    """
-    Extracción de último recurso para JSON severamente malformado.
-    Busca action y filename con regex simple, y extrae content como todo
-    lo que hay entre la apertura de su string y el último '\"' antes del
-    cierre del objeto JSON. Funciona con HTML que tiene {}, comillas, etc.
-    """
-    # Regex ultra-flexibles para capturar action y filename (soportan ' o " y espacios)
-    action_m   = re.search(r'["\']action["\']\s*:\s*["\']([^"\']+)["\']',   json_str)
-    filename_m = re.search(r'["\']filename["\']\s*:\s*["\']([^"\']+)["\']', json_str)
-
-    if not action_m or not filename_m:
-        return None
-
-    action = action_m.group(1).strip()
-    filename = filename_m.group(1).strip()
-
-    # Localizar el inicio del valor de "content" (soportando 'content' o "content")
-    content_key_m = re.search(r'["\']content["\']\s*:\s*(["\'])', json_str)
-    if not content_key_m:
-        return None
-
-    # El contenido empieza tras la comilla de apertura detectada
-    quote_char = content_key_m.group(1)
-    content_start_pos = content_key_m.end()
-    inner = json_str[content_start_pos:]
-    
-    # BUSQUEDA ROBUSTA DE LA COMILLA DE CIERRE:
-    # Buscamos el char de comilla que va seguido opcionalmente de espacios y luego un } o un ,
-    # Usamos f-string para inyectar el caracter de comilla detectado (quote_char)
-    content_match = re.search(rf'([\s\S]*?){quote_char}\s*[}},]', inner)
-    
-    if not content_match:
-        # Fallback: última comilla del bloque
-        last_quote = inner.rfind(quote_char)
-        if last_quote == -1: return None
-        raw_content = inner[:last_quote]
-    else:
-        raw_content = content_match.group(1)
-
-    # Desescapar secuencias JSON estándar
-    unescaped = (
-        raw_content
-        .replace("\\n", "\n")
-        .replace("\\t", "\t")
-        .replace("\\r", "")
-        .replace('\\"', '"')
-        .replace("\\\\", "\\")
-    )
-
-    return {
-        "action":     action,
-        "filename":   filename,
-        "content":    unescaped,
-        "_recovered": True,
-    }

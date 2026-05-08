@@ -162,15 +162,30 @@ class OpenRouterProvider(LLMProvider):
                     mensajes.append({"role": m["role"], "content": m["content"]})
             mensajes.append({"role": "user", "content": mensaje})
 
-            stream = cliente.chat.completions.create(
-                model="meta-llama/llama-3-8b-instruct:free",
-                messages=mensajes,
-                stream=True,
-                temperature=0.2
-            )
-            for chunk in stream:
-                if chunk.choices[0].delta.content:
-                    yield chunk.choices[0].delta.content
+            # Modelo configurable + fallback robusto para evitar caídas por modelos retirados.
+            preferred_model = os.getenv("OPENROUTER_MODEL", "openrouter/auto")
+            candidate_models = [preferred_model]
+            if preferred_model != "openrouter/auto":
+                candidate_models.append("openrouter/auto")
+
+            last_error = None
+            for model_name in candidate_models:
+                try:
+                    stream = cliente.chat.completions.create(
+                        model=model_name,
+                        messages=mensajes,
+                        stream=True,
+                        temperature=0.2
+                    )
+                    for chunk in stream:
+                        if chunk.choices[0].delta.content:
+                            yield chunk.choices[0].delta.content
+                    return
+                except Exception as inner_e:
+                    last_error = inner_e
+                    continue
+
+            raise last_error if last_error else RuntimeError("No se pudo inicializar OpenRouter.")
         except Exception as e:
             yield f"\n\n❌ Error OpenRouter: {e}"
 
@@ -266,3 +281,36 @@ class EdgeTTSProvider:
     def synthesize(self, text: str) -> tuple[bytes | None, str | None, str | None]:
         from src.services.audio_service import synthesize_speech_with_edge
         return synthesize_speech_with_edge(text, voice=self.voice)
+
+
+class LLMFactory:
+    """Factoría centralizada para instanciar proveedores LLM."""
+    
+    @staticmethod
+    def get_provider(motor_name: str, api_keys: dict):
+        if "Gemini" in motor_name:
+            from src.services.llm_provider import GeminiProvider
+            return GeminiProvider(api_key=api_keys.get("GEMINI_API_KEY"))
+            
+        elif "Groq" in motor_name and "Whisper" not in motor_name:
+            from src.services.llm_provider import GroqProvider
+            return GroqProvider(api_key=api_keys.get("GROQ_API_KEY"))
+            
+        elif "OpenRouter" in motor_name:
+            from src.services.llm_provider import OpenRouterProvider
+            return OpenRouterProvider(api_key=api_keys.get("OPENROUTER_API_KEY"))
+            
+        else:
+            custom_models = api_keys.get("CUSTOM_MODELS", [])
+            matched_custom = next((cm for cm in custom_models if f"🤖 {cm['name']}" == motor_name), None)
+            
+            if matched_custom:
+                from src.services.llm_provider import CustomOpenAIProvider
+                return CustomOpenAIProvider(
+                    base_url=matched_custom["base_url"],
+                    api_key=matched_custom["api_key"],
+                    model_name=matched_custom["model_id"],
+                )
+            
+            from src.services.llm_provider import OpenRouterProvider
+            return OpenRouterProvider(api_key=api_keys.get("OPENROUTER_API_KEY"))
