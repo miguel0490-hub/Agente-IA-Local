@@ -25,8 +25,13 @@ jobs:
       - name: Install dependencies
         run: pip install --upgrade pip && pip install -r requirements.txt
 
+      # Ramas antiguas sin Markdown en requirements fallan antes de pytest con mensaje claro.
+      - name: Comprobar dependencias mínimas declaradas
+        run: grep -qE '^Markdown>=' requirements.txt || (echo "::error::requirements.txt debe incluir Markdown>=... (fusiona origin/master)" && exit 1)
+
+      # Refuerzo CI: no importar e2e aunque falte norecursedirs/importorskip en una rama vieja.
       - name: Tests (coverage según pytest.ini)
-        run: python -m pytest
+        run: python -m pytest --ignore=tests/e2e
 
   dependency-audit:
     runs-on: ubuntu-latest
