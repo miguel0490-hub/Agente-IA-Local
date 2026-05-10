@@ -3,8 +3,11 @@ Test de regresión para el bug KeyError: 'src' en parse_tool_calls.
 Verifica que el parser maneja correctamente HTML con atributos src y
 comillas simples dentro del campo content del JSON.
 """
-import sys
 import os
+import sys
+
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.core.agent_tools import parse_tool_calls
@@ -30,7 +33,7 @@ def test_html_con_src_no_rompe_parser():
         print("[OK] test_html_con_src_no_rompe_parser: PASADO")
     except KeyError as e:
         print(f"[FAIL] KeyError no manejado: {e}")
-        sys.exit(1)
+        pytest.fail(f"KeyError no manejado: {e}")
 
 def test_json_sin_action_no_rompe_parser():
     """Un JSON valido pero sin 'action' reconocida no debe añadir tools ni crashear."""
@@ -45,7 +48,7 @@ def test_json_sin_action_no_rompe_parser():
         print("[OK] test_json_sin_action_no_rompe_parser: PASADO")
     except KeyError as e:
         print(f"[FAIL] KeyError no manejado: {e}")
-        sys.exit(1)
+        pytest.fail(f"KeyError no manejado: {e}")
 
 def test_raw_json_con_texto_alrededor():
     """Verifica que el fallback detecta JSON crudo incluso con texto antes y después."""
