@@ -38,3 +38,6 @@ genera_auditoria.py
 
 # Backups de archivos de configuración
 *.bak
+
+# Logs locales
+logs/
