@@ -5,6 +5,10 @@ on:
     branches: [main, master]
   pull_request:
 
+# Evita el aviso de deprecación Node 20 en actions hasta que los runners usen Node 24 por defecto.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -14,6 +18,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: Revisión en checkout (debug)
+        run: git rev-parse HEAD && git log -1 --oneline
 
       - name: Install dependencies
         run: pip install --upgrade pip && pip install -r requirements.txt

@@ -1,6 +1,10 @@
-import pytest
-from playwright.sync_api import Page, expect
 import os
+
+import pytest
+
+# Sin Playwright instalado, pytest no debe fallar en la recolección (p. ej. CI o PRs antiguos).
+pytest.importorskip("playwright")
+from playwright.sync_api import Page, expect
 
 BASE_URL = os.getenv("E2E_BASE_URL", "http://localhost:8501")
 pytestmark = pytest.mark.e2e
