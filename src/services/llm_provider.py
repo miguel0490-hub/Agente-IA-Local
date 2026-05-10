@@ -9,6 +9,7 @@ compatibles con la API de OpenAI. También incluye wrappers de audio
 import os
 import datetime
 import json
+import re
 
 import requests
 import google.genai as ggenai
@@ -17,6 +18,34 @@ from groq import Groq
 from openai import OpenAI
 
 from src.core.config import CARPETA_IMAGENES, PROMPT_TECH_LEAD
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except Exception:
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except Exception:
+        return default
+
+
+def _continuation_prompt() -> str:
+    return (
+        "Continúa exactamente desde donde te quedaste, sin repetir contenido, "
+        "manteniendo formato y contexto."
+    )
+
+
+def _clean_model_noise(text: str) -> str:
+    if not text:
+        return ""
+    # Limpia prefijos de rol residuales frecuentes de modelos.
+    return re.sub(r"(?im)^\s*(agt|agent|assistant|asistente)\s*:\s*", "", text)
 
 
 class LLMProvider:
@@ -62,15 +91,15 @@ class GeminiProvider(LLMProvider):
 
             config = types.GenerateContentConfig(
                 system_instruction=system_instruction or PROMPT_TECH_LEAD,
-                temperature=0.2,
-                max_output_tokens=8192,
+                temperature=_env_float("GEMINI_TEMPERATURE", 0.2),
+                max_output_tokens=_env_int("GEMINI_MAX_TOKENS", 8192),
                 safety_settings=safety_settings
             )
 
             chat = cliente.chats.create(model=model_name, config=config)
             for frag in chat.send_message_stream(carga_util):
                 if frag.text is not None:
-                    yield frag.text
+                    yield _clean_model_noise(frag.text)
         except Exception as e: 
             raise
             
@@ -126,16 +155,50 @@ class GroqProvider(LLMProvider):
                 if m.get("content"):
                     mensajes.append({"role": m["role"], "content": m["content"]})
             mensajes.append({"role": "user", "content": mensaje})
-            stream = cliente.chat.completions.create(
-                model=self.model,
-                messages=mensajes,
-                stream=True,
-                max_tokens=8192,
-                temperature=0.2
-            )
-            for chunk in stream:
-                if chunk.choices[0].delta.content:
-                    yield chunk.choices[0].delta.content
+            preferred_model = os.getenv("GROQ_MODEL", self.model)
+            fallback_model = os.getenv("GROQ_FALLBACK_MODEL", "llama-3.1-70b-versatile")
+            candidate_models = [preferred_model]
+            if fallback_model and fallback_model != preferred_model:
+                candidate_models.append(fallback_model)
+
+            max_tokens = _env_int("GROQ_MAX_TOKENS", 8192)
+            temperature = _env_float("GROQ_TEMPERATURE", 0.2)
+            max_rounds = max(1, _env_int("GROQ_CONTINUATION_ROUNDS", 2))
+
+            last_error = None
+            for model_name in candidate_models:
+                try:
+                    convo_messages = list(mensajes)
+                    for _ in range(max_rounds):
+                        streamed_parts = []
+                        finish_reason = None
+                        stream = cliente.chat.completions.create(
+                            model=model_name,
+                            messages=convo_messages,
+                            stream=True,
+                            max_tokens=max_tokens,
+                            temperature=temperature,
+                        )
+                        for chunk in stream:
+                            choice = chunk.choices[0]
+                            delta_content = choice.delta.content
+                            if delta_content:
+                                streamed_parts.append(delta_content)
+                                yield _clean_model_noise(delta_content)
+                            if getattr(choice, "finish_reason", None):
+                                finish_reason = choice.finish_reason
+
+                        full_round = "".join(streamed_parts).strip()
+                        if finish_reason != "length" or not full_round:
+                            return
+
+                        convo_messages.append({"role": "assistant", "content": full_round})
+                        convo_messages.append({"role": "user", "content": _continuation_prompt()})
+                    return
+                except Exception as inner_e:
+                    last_error = inner_e
+                    continue
+            raise last_error if last_error else RuntimeError("No se pudo inicializar Groq.")
         except Exception as e:
             raise
 
@@ -164,6 +227,9 @@ class OpenRouterProvider(LLMProvider):
 
             # Modelo configurable + fallback robusto para evitar caídas por modelos retirados.
             preferred_model = os.getenv("OPENROUTER_MODEL", "openrouter/auto")
+            max_tokens = _env_int("OPENROUTER_MAX_TOKENS", 8192)
+            temperature = _env_float("OPENROUTER_TEMPERATURE", 0.2)
+            max_rounds = max(1, _env_int("OPENROUTER_CONTINUATION_ROUNDS", 2))
             candidate_models = [preferred_model]
             if preferred_model != "openrouter/auto":
                 candidate_models.append("openrouter/auto")
@@ -171,15 +237,31 @@ class OpenRouterProvider(LLMProvider):
             last_error = None
             for model_name in candidate_models:
                 try:
-                    stream = cliente.chat.completions.create(
-                        model=model_name,
-                        messages=mensajes,
-                        stream=True,
-                        temperature=0.2
-                    )
-                    for chunk in stream:
-                        if chunk.choices[0].delta.content:
-                            yield chunk.choices[0].delta.content
+                    convo_messages = list(mensajes)
+                    for _ in range(max_rounds):
+                        streamed_parts = []
+                        finish_reason = None
+                        stream = cliente.chat.completions.create(
+                            model=model_name,
+                            messages=convo_messages,
+                            stream=True,
+                            max_tokens=max_tokens,
+                            temperature=temperature
+                        )
+                        for chunk in stream:
+                            choice = chunk.choices[0]
+                            if choice.delta.content:
+                                streamed_parts.append(choice.delta.content)
+                                yield _clean_model_noise(choice.delta.content)
+                            if getattr(choice, "finish_reason", None):
+                                finish_reason = choice.finish_reason
+
+                        full_round = "".join(streamed_parts).strip()
+                        if finish_reason != "length" or not full_round:
+                            return
+
+                        convo_messages.append({"role": "assistant", "content": full_round})
+                        convo_messages.append({"role": "user", "content": _continuation_prompt()})
                     return
                 except Exception as inner_e:
                     last_error = inner_e
@@ -188,6 +270,38 @@ class OpenRouterProvider(LLMProvider):
             raise last_error if last_error else RuntimeError("No se pudo inicializar OpenRouter.")
         except Exception as e:
             yield f"\n\n❌ Error OpenRouter: {e}"
+
+
+class OllamaProvider(LLMProvider):
+    """Compatibilidad legacy: proveedor para Ollama local."""
+
+    def __init__(self, model_name: str | None = None, base_url: str | None = None):
+        super().__init__(api_key=os.getenv("OLLAMA_API_KEY", "ollama-local"))
+        self.model_name = model_name or os.getenv("OLLAMA_MODEL", "llama3.1")
+        self.base_url = base_url or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+
+    def stream_chat(self, mensaje: str, historial: list, system_instruction: str = None):
+        try:
+            cliente = OpenAI(api_key=self.api_key, base_url=self.base_url)
+            mensajes = [{"role": "system", "content": system_instruction or PROMPT_TECH_LEAD}]
+            for m in historial:
+                if m.get("content"):
+                    mensajes.append({"role": m["role"], "content": m["content"]})
+            mensajes.append({"role": "user", "content": mensaje})
+
+            stream = cliente.chat.completions.create(
+                model=self.model_name,
+                messages=mensajes,
+                stream=True,
+                max_tokens=_env_int("OLLAMA_MAX_TOKENS", 8192),
+                temperature=_env_float("OLLAMA_TEMPERATURE", 0.2),
+            )
+            for chunk in stream:
+                delta_content = chunk.choices[0].delta.content
+                if delta_content:
+                    yield _clean_model_noise(delta_content)
+        except Exception as e:
+            yield f"\n\n❌ Error Ollama: {e}"
 
 
 class CustomOpenAIProvider(LLMProvider):
@@ -229,12 +343,13 @@ class CustomOpenAIProvider(LLMProvider):
                 model=self.model_name,
                 messages=mensajes,
                 stream=True,
-                temperature=0.2,
+                max_tokens=_env_int("CUSTOM_OPENAI_MAX_TOKENS", 8192),
+                temperature=_env_float("CUSTOM_OPENAI_TEMPERATURE", 0.2),
             )
             for chunk in stream:
                 delta_content = chunk.choices[0].delta.content
                 if delta_content:
-                    yield delta_content
+                    yield _clean_model_noise(delta_content)
         except Exception as e:
             error_str = str(e)
             if "402" in error_str or "Insufficient Balance" in error_str:

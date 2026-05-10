@@ -1,0 +1,4 @@
+# Herramientas opcionales para desarrollo local y CI (dead code scan).
+# Instalación: pip install -r requirements-dev.txt
+-r requirements.txt
+vulture>=2.14

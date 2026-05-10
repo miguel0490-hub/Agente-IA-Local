@@ -1,11 +1,10 @@
-from ddgs import DDGS
-
 def search_web(query: str, max_results: int = 5) -> str:
     """
     Realiza una búsqueda en DuckDuckGo y devuelve un resumen formateado
     de los primeros resultados para inyectar al LLM.
     """
     try:
+        from ddgs import DDGS
         ddgs = DDGS()
         results = list(ddgs.text(query, max_results=max_results))
         
@@ -23,6 +22,10 @@ def search_web(query: str, max_results: int = 5) -> str:
             formatted_results += f"Resumen: {body}\n\n"
             
         return formatted_results.strip()
-        
+    except ModuleNotFoundError:
+        return (
+            "Error en la búsqueda web: falta la dependencia 'ddgs'. "
+            "Instálala con: pip install ddgs"
+        )
     except Exception as e:
         return f"Error en la búsqueda web: {str(e)}"

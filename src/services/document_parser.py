@@ -35,6 +35,8 @@ _BINARY_EXTENSIONS = {
     '.ttf', '.otf', '.woff', '.woff2',
 }
 
+_AUDIO_EXTENSIONS = {".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac"}
+
 # ─── Parsers dedicados (Patrón Strategy) ──────────────────────────────────────
 
 def _parse_pdf(file_obj) -> str:
@@ -192,11 +194,16 @@ def _fallback_universal(file_obj, nombre: str) -> str:
 
     # Cortocircuito rápido para binarios conocidos
     if ext in _BINARY_EXTENSIONS:
+        if ext in _AUDIO_EXTENSIONS:
+            return (
+                f"⚠️ No puedo leer {nombre} como texto.\n"
+                f"Es un archivo de audio ({ext}).\n"
+                "👉 Para analizar su contenido, usa **Transcripción STT — Groq Whisper** en el panel lateral."
+            )
         return (
-            f"⛔ No se pudo extraer texto legible de '{nombre}'.\n"
-            f"Motivo: El formato '{ext}' es un archivo binario sin representación textual.\n"
-            f"Sugerencia: Si necesitas analizar su contenido, conviértelo primero "
-            f"usando el 'Estudio de Conversión' del panel lateral."
+            f"⚠️ No puedo leer {nombre} como texto.\n"
+            f"El formato {ext} es binario y no tiene contenido textual directo.\n"
+            "👉 Puedes convertirlo primero desde **Estudio de Conversión** y luego volver a subirlo."
         )
 
     # Intentar lectura de texto para extensiones desconocidas
@@ -207,9 +214,9 @@ def _fallback_universal(file_obj, nombre: str) -> str:
         bytes_no_imprimibles = sum(1 for b in muestra if b < 9 or (14 <= b <= 31) or b == 127)
         if len(muestra) > 0 and (bytes_no_imprimibles / len(muestra)) > 0.30:
             return (
-                f"⛔ No se pudo extraer texto legible de '{nombre}'.\n"
-                f"Motivo: El archivo parece ser un binario (alta proporción de bytes no imprimibles).\n"
-                f"Extensión detectada: '{ext or 'sin extensión'}'"
+                f"⚠️ No pude leer {nombre} como texto legible.\n"
+                f"Detecté contenido binario (extensión: {ext or 'sin extensión'}).\n"
+                "👉 Sugerencia: conviértelo primero a TXT/PDF/DOCX desde **Estudio de Conversión**."
             )
         # Es texto — decodificar
         try:
@@ -218,7 +225,7 @@ def _fallback_universal(file_obj, nombre: str) -> str:
             return raw.decode("latin-1", errors="replace")
 
     except Exception as e:
-        return f"⛔ Error inesperado al leer '{nombre}': {e}"
+        return f"⛔ Error inesperado al leer {nombre}: {e}"
 
 
 # ─── Función Pública Principal ─────────────────────────────────────────────────
@@ -261,7 +268,18 @@ def extraer_texto_archivo(file_obj) -> str:
     # Evaluación para RAG (Archivos muy grandes > 5000 palabras)
     palabras = len(texto_extraido.split())
     if palabras > 5000 and not texto_extraido.startswith("⛔"):
+        from src.services.task_queue import enqueue_rag_indexing
         from src.services.rag_service import RAGService
+
+        job_id = enqueue_rag_indexing(nombre, texto_extraido)
+        if job_id:
+            return (
+                f"📚 [ARCHIVO GRANDE ENCOLADO EN CEREBRO RAG]\n"
+                f"El archivo '{nombre}' es demasiado largo ({palabras} palabras) y se ha encolado para indexación asíncrona.\n"
+                f"Job ID: {job_id}\n"
+                f"Cuando termine, usa la herramienta 'query_rag' con palabras clave de tu consulta."
+            )
+
         rag = RAGService()
         chunks = rag.index_document(nombre, texto_extraido)
         return (

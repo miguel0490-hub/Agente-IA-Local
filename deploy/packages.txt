@@ -1,4 +1,0 @@
-ffmpeg
-libmagic1
-pandoc
-wkhtmltopdf

@@ -68,7 +68,7 @@ Si el usuario te pide convertir un archivo a un formato específico (ej: "Pasa e
   "suggested_format": "mp3"
 }
 ```
-Si necesitas ejecutar código Python en local para hacer cálculos, procesar datos o comprobar lógica, usa:
+Si necesitas ejecutar código Python para cálculos o comprobaciones, usa:
 ```json
 {
   "action": "execute_code",
@@ -76,6 +76,7 @@ Si necesitas ejecutar código Python en local para hacer cálculos, procesar dat
   "code": "print('Hola Mundo')"
 }
 ```
+IMPORTANTE: Solo se ejecutará si el usuario confirma explícitamente con [approve:execute_code].
 Si el usuario sube un archivo enorme, el sistema lo indexará. Para leer el Cerebro RAG, usa:
 ```json
 {
@@ -420,7 +421,33 @@ ESTILOS_CSS = f"""
     }}
     div[data-testid="stChatInput"] textarea {{ color: #FFFFFF !important; }}
     div[data-testid="stChatInput"] textarea::placeholder {{ color: #94A3B8 !important; }}
-    div[data-testid="stChatInput"] button {{ color: #00F2FE !important; }}
+    /* Botón de envío del chat: aislarlo del estilo global de botones */
+    div[data-testid="stChatInput"] button,
+    div[data-testid="stChatInputSubmitButton"] button {{
+        width: 34px !important;
+        height: 34px !important;
+        min-width: 34px !important;
+        border-radius: 10px !important;
+        padding: 0 !important;
+        border: 1px solid rgba(0, 242, 254, 0.35) !important;
+        background: linear-gradient(135deg, #00F2FE, #4FACFE) !important;
+        box-shadow: 0 0 10px rgba(0, 242, 254, 0.35) !important;
+    }}
+    div[data-testid="stChatInput"] button:hover,
+    div[data-testid="stChatInputSubmitButton"] button:hover {{
+        transform: none !important;
+        filter: brightness(1.08) !important;
+        box-shadow: 0 0 14px rgba(0, 242, 254, 0.55) !important;
+    }}
+    div[data-testid="stChatInput"] button svg,
+    div[data-testid="stChatInputSubmitButton"] button svg {{
+        width: 17px !important;
+        height: 17px !important;
+        fill: #0F172A !important;
+        color: #0F172A !important;
+        display: block !important;
+        opacity: 1 !important;
+    }}
 
     /* ── Burbujas de Chat ────────────────────────────────────── */
     .stChatMessage {{
@@ -450,6 +477,15 @@ ESTILOS_CSS = f"""
 
     /* ── File Uploader ──────────────────────────────────────── */
     /* Mantener comportamiento nativo para evitar conflictos de drag&drop */
+    /* Oculta texto nativo de Streamlit en inglés ("xxMB per file"). */
+    [data-testid="stFileUploader"] small,
+    [data-testid="stFileUploader"] [data-testid="stFileUploaderDropzoneInstructions"],
+    [data-testid="stFileUploaderDropzoneInstructions"] small,
+    [data-testid="stFileUploaderDropzoneInstructions"] span,
+    [data-testid="stFileUploaderDropzone"] small {{
+        display: none !important;
+        visibility: hidden !important;
+    }}
 
     /* ── Menús Desplegables (Selectbox) ─────────────────────── */
     div[data-baseweb="select"] > div {{
@@ -502,3 +538,6 @@ ESTILOS_CSS = f"""
     }}
 </style>
 """
+
+# Compatibilidad con tests/scripts legacy
+INSTRUCCIONES_SISTEMA = PROMPT_TECH_LEAD

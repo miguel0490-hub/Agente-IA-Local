@@ -41,3 +41,16 @@ genera_auditoria.py
 
 # Logs locales
 logs/
+
+# Tests y cobertura
+.coverage
+.pytest_cache/
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Cuarentena de análisis de ficheros (no versionar)
+data/quarantine/
+
+# Base de datos de desarrollo con nombre frecuente
+data/superagente.db

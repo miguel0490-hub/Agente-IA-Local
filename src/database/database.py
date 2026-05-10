@@ -147,6 +147,33 @@ def init_db():
         raise
 
 
+def cleanup_expired_tokens() -> None:
+    """Purges expired remember/reset/verification tokens."""
+    now = datetime.now()
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE users SET remember_token = NULL, remember_token_expires = NULL "
+                "WHERE remember_token_expires IS NOT NULL AND remember_token_expires <= :now"
+            ),
+            {"now": now},
+        )
+        conn.execute(
+            text(
+                "UPDATE users SET reset_token = NULL, reset_token_expires = NULL "
+                "WHERE reset_token_expires IS NOT NULL AND reset_token_expires <= :now"
+            ),
+            {"now": now},
+        )
+        conn.execute(
+            text(
+                "UPDATE users SET verification_token = NULL, verification_token_expires = NULL "
+                "WHERE verification_token_expires IS NOT NULL AND verification_token_expires <= :now"
+            ),
+            {"now": now},
+        )
+
+
 # --- Autenticación y Usuarios ---
 def register_user(first_name, last_name, email, username, password):
     salt = bcrypt.gensalt()
