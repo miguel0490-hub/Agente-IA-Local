@@ -22,7 +22,7 @@ class ToolCallModel(BaseModel):
 
 class ToolValidator:
     """Capa de Autorización y Permisos (Tool Permission Layer)."""
-    ALLOWED_ACTIONS = {"create_file", "edit_file", "search_web", "open_converter", "execute_code", "query_rag"}
+    ALLOWED_ACTIONS = {"create_file", "edit_file", "search_web", "open_converter", "query_rag"}
 
     @staticmethod
     def authorize(tool_data: dict) -> Optional[dict]:

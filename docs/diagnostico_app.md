@@ -1,3 +1,4 @@
+```python
 import streamlit as st
 import os
 import sys
@@ -12,26 +13,21 @@ st.set_page_config(page_title="SuperAgente IA Pro", page_icon="⚡", layout="wid
 if not os.getenv("APP_URL"):
     os.environ["STREAMLIT_SERVER_PORT"] = str(st.get_option("server.port"))
 
-from src.database.database import (
+from src.database import (
     register_user, verify_login, update_api_keys, get_user_api_keys,
     create_chat, get_user_chats, delete_chat,
     update_remember_token, clear_remember_token, verify_remember_token,
 )
 from src.services.memory_service import cargar_memoria, guardar_memoria, limpiar_memoria
 from src.core.config import PAGE_TITLE, PAGE_ICON, LAYOUT, CARPETA_IMAGENES, PROMPT_TECH_LEAD, PROMPT_APP_BUILDER, PROMPT_UI_DESIGNER, ESTILOS_CSS
+from PIL import Image
 from src.core.intent_parser import parse_intent
 from src.core.ui_helpers import render_download_button
 import extra_streamlit_components as stx
 
 # --- INICIALIZACIÓN DE DB Y GARBAGE COLLECTOR ---
-from src.database.database import init_db
-
-@st.cache_resource(show_spinner=False)
-def start_database():
-    """Ejecuta la verificación de tablas de la DB solo 1 vez por ciclo de vida del servidor."""
-    init_db()
-
-start_database()
+from src.database import init_db
+init_db()  # Inicialización controlada (Idempotente)
 
 def run_garbage_collector():
     """Elimina archivos temporales generados hace más de 24 horas."""
@@ -79,8 +75,6 @@ if "temp_custom_models" not in st.session_state:
     st.session_state.temp_custom_models = []
 if "show_settings" not in st.session_state:
     st.session_state.show_settings = False
-if "form_clear_counter" not in st.session_state:
-    st.session_state.form_clear_counter = 0
 
 # --- ESTILOS ---
 st.markdown(ESTILOS_CSS, unsafe_allow_html=True)
@@ -107,7 +101,7 @@ if not st.session_state.user_id:
 
 # --- VERIFICACIÓN DE TOKEN EN URL ---
 if "token" in st.query_params:
-    from src.database.database import verify_user_token
+    from src.database import verify_user_token
     token = st.query_params["token"]
     if verify_user_token(token):
         st.success("✅ Cuenta Premium verificada exitosamente. Ya puedes iniciar sesión.")
@@ -116,7 +110,7 @@ if "token" in st.query_params:
     st.query_params.clear()
 
 if "reset_token" in st.query_params:
-    from src.database.database import update_password_with_token
+    from src.database import update_password_with_token
     reset_token = st.query_params["reset_token"]
     st.markdown("<h2 style='text-align: center; color: #00F2FE;'>Recuperación de Contraseña</h2>", unsafe_allow_html=True)
     with st.form("reset_password_form"):
@@ -154,8 +148,7 @@ if not st.session_state.user_id:
                 submitted = st.form_submit_button("Entrar", use_container_width=True)
                 if submitted:
                     if username and password:
-                        with st.spinner("Autenticando conexión segura..."):
-                            success, result = verify_login(username, password)
+                        success, result = verify_login(username, password)
                         if success:
                             st.session_state.user_id = result
                             # Cargar API keys
@@ -167,9 +160,9 @@ if not st.session_state.user_id:
                             if remember_me:
                                 import uuid
                                 _token = uuid.uuid4().hex
+                                update_remember_token(result, _token)
                                 # Calcular expiración a 7 días
                                 expires_date = datetime.datetime.now() + datetime.timedelta(days=7)
-                                update_remember_token(result, _token, expires_date)
                                 # Guardar cookie con hardening
                                 cookie_manager.set(
                                     "auth_token",
@@ -228,7 +221,7 @@ if not st.session_state.user_id:
                 rec_email = st.text_input("Correo Electrónico registrado")
                 if st.form_submit_button("Enviar enlace de recuperación", use_container_width=True):
                     if rec_email:
-                        from src.database.database import generate_password_reset_token
+                        from src.database import generate_password_reset_token
                         success, f_name, r_token = generate_password_reset_token(rec_email)
                         if success:
                             from src.services.email_service import send_password_reset_email
@@ -412,6 +405,8 @@ def get_groq_provider():
     from src.services.llm_provider import GroqProvider
     return GroqProvider(api_key=st.session_state.api_keys.get("GROQ_API_KEY"))
 
+# OllamaProvider eliminado — usar CustomOpenAIProvider con URL de Ngrok para IAs locales
+
 def get_openrouter_provider():
     from src.services.llm_provider import OpenRouterProvider
     return OpenRouterProvider(api_key=st.session_state.api_keys.get("OPENROUTER_API_KEY"))
@@ -564,7 +559,7 @@ def panel_ajustes():
     #  TAB 3 — Cuenta                                                     #
     # ------------------------------------------------------------------ #
     with tab3:
-        from src.database.database import get_user_profile, change_user_password
+        from src.database import get_user_profile, change_user_password
         perfil = get_user_profile(st.session_state.user_id)
         if perfil:
             st.markdown(f"**Nombre:** {perfil['first_name']} {perfil['last_name']}")
@@ -593,7 +588,7 @@ def panel_ajustes():
 
 # --- CONFIGURACIÓN DE CHATS EN SIDEBAR ---
 with st.sidebar:
-    from src.database.database import get_user_profile
+    from src.database import get_user_profile
     import html
 
     user_data = get_user_profile(st.session_state.user_id)
@@ -614,7 +609,7 @@ with st.sidebar:
     st.markdown('<div class="danger-btn">', unsafe_allow_html=True)
     if st.button("🚪 Cerrar Sesión", use_container_width=True, type="primary", key="sidebar_logout"):
         cookie_manager.delete("auth_token")
-        from src.database.database import clear_remember_token
+        from src.database import clear_remember_token
         clear_remember_token(st.session_state.user_id)
         for key in list(st.session_state.keys()):
             del st.session_state[key]
@@ -672,9 +667,7 @@ with st.sidebar:
     st.divider()
 
 
-@st.cache_data(show_spinner=False)
 def get_roles():
-    """Retorna el catálogo de roles de operación y su configuración de motor/prompt."""
     return {
         "🧠 Asistente General (Tech Lead)": {
             "prompt": PROMPT_TECH_LEAD,
@@ -691,7 +684,6 @@ def get_roles():
     }
 
 def cambiar_rol():
-    """Actualiza el rol activo y persiste el cambio de contexto en memoria."""
     nuevo_rol = st.session_state.selector_rol
     if nuevo_rol != st.session_state.rol_activo:
         st.session_state.messages = []
@@ -709,9 +701,8 @@ from src.services.converter_service import run_conversion
 
 @st.dialog("🔄 Estudio de Conversión Universal")
 def panel_conversor():
-    """Renderiza el estudio de conversión y publica resultados directamente en el chat."""
     st.write("Sube cualquier archivo (video, audio, imagen, documento) y conviértelo al instante.")
-    archivo_conv = st.file_uploader("📥 Arrastra tu archivo aquí", key=f"uploader_conv_{st.session_state.form_clear_counter}")
+    archivo_conv = st.file_uploader("📥 Arrastra tu archivo aquí", type=None, key="uploader_conv")
     
     if archivo_conv:
         st.info(f"Archivo detectado: {archivo_conv.name}")
@@ -742,7 +733,6 @@ def panel_conversor():
                         })
                         from src.services.memory_service import guardar_memoria
                         if st.session_state.chat_id: guardar_memoria(st.session_state.chat_id, st.session_state.messages, st.session_state.api_keys)
-                        st.session_state.form_clear_counter += 1
                         st.rerun()
                     else:
                         st.error("❌ Falló la conversión.")
@@ -847,6 +837,7 @@ with st.sidebar:
     st.markdown("**📁 Adjuntar Archivo**")
     archivo = st.file_uploader(
         "Código, docs, imágenes, datos…",
+        type=None,
         help="Formatos soportados: texto, código, PDF, Word, Excel, imágenes, JSON, YAML, logs y más.",
         label_visibility="collapsed"
     )
@@ -864,8 +855,9 @@ with st.sidebar:
         st.markdown("**🎙️ Transcripción STT — Groq Whisper**")
         st.caption("Transcribe audio a texto con Whisper Large v3.")
         audio_stt = st.file_uploader(
-            "Sube tu audio o vídeo",
-            key=f"uploader_stt_{st.session_state.form_clear_counter}"
+            "Audio (mp3, wav, webm, ogg, flac, m4a)",
+            type=None,
+            key="uploader_stt"
         )
         
         if audio_stt:
@@ -887,7 +879,6 @@ with st.sidebar:
                     })
                     from src.services.memory_service import guardar_memoria
                     if st.session_state.chat_id: guardar_memoria(st.session_state.chat_id, st.session_state.messages, st.session_state.api_keys)
-                    st.session_state.form_clear_counter += 1
                     st.rerun()
 
         st.markdown("---")
@@ -915,14 +906,13 @@ with st.sidebar:
         texto_para_tts = st.text_area(
             "Texto a sintetizar:",
             placeholder="Escribe aquí el texto que quieres escuchar…",
-            height=180,
-            key=f"tts_input_text_{st.session_state.form_clear_counter}"
+            height=100,
+            max_chars=4096,
+            key="tts_input_text"
         )
         if st.button("🔊 Generar Audio", use_container_width=True, key="btn_tts"):
             if not texto_para_tts.strip():
                 st.warning("⚠️ Escribe algo antes de sintetizar.")
-            elif len(texto_para_tts) > 4096:
-                st.warning(f"⚠️ El texto es demasiado largo ({len(texto_para_tts)}/4096 caracteres). Por favor, recórtalo para poder generar el audio.")
             else:
                 with st.spinner(f"Sintetizando con {prov_tts_sel}…"):
                     if prov_tts_sel == "OpenAI TTS (Pago)":
@@ -942,7 +932,6 @@ with st.sidebar:
                     })
                     from src.services.memory_service import guardar_memoria
                     if st.session_state.chat_id: guardar_memoria(st.session_state.chat_id, st.session_state.messages, st.session_state.api_keys)
-                    st.session_state.form_clear_counter += 1
                     st.rerun()
 
         st.markdown("---")
@@ -959,7 +948,7 @@ with st.sidebar:
             "Prompt:",
             placeholder="Ej: A futuristic robot reading a book…",
             height=80,
-            key=f"img_gen_prompt_{st.session_state.form_clear_counter}"
+            key="img_gen_prompt"
         )
         if proveedor_imagen_sel == "OpenAI DALL-E 3":
             col_size, col_quality = st.columns(2)
@@ -1010,7 +999,6 @@ with st.sidebar:
                     })
                     from src.services.memory_service import guardar_memoria
                     if st.session_state.chat_id: guardar_memoria(st.session_state.chat_id, st.session_state.messages, st.session_state.api_keys)
-                    st.session_state.form_clear_counter += 1
                     st.rerun()
 
     st.divider()
@@ -1021,17 +1009,17 @@ with st.sidebar:
         if st.button("🧹 Limpiar mensajes", use_container_width=True, key="btn_borrar_memoria"):
             limpiar_memoria(st.session_state.chat_id)
             st.session_state.messages = []
-            # Forzar limpieza visual de todos los widgets multimedia
-            st.session_state.form_clear_counter += 1
+            for k in ["conv_result_path", "stt_result_text", "tts_result_path", "img_result_path", "img_result_prompt"]:
+                st.session_state.pop(k, None)
             st.rerun()
     with c2:
         if st.button("🗑️ Borrar este Chat", use_container_width=True, key="btn_eliminar_chat"):
-            from src.database.database import delete_chat
+            from src.database import delete_chat
             delete_chat(st.session_state.chat_id)
             st.session_state.chat_id = None
             st.session_state.messages = []
-            # Forzar limpieza visual de todos los widgets multimedia
-            st.session_state.form_clear_counter += 1
+            for k in ["conv_result_path", "stt_result_text", "tts_result_path", "img_result_path", "img_result_prompt"]:
+                st.session_state.pop(k, None)
             st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -1044,7 +1032,6 @@ for msg in st.session_state.messages:
             st.markdown(msg["content"])
         if msg.get("image_path") and os.path.exists(msg.get("image_path")):
             filepath = msg["image_path"]
-            from PIL import Image
             img = Image.open(filepath)
             st.image(img, caption="Obra generada", use_container_width=True)
             render_download_button(filepath)
@@ -1067,7 +1054,7 @@ if prompt := st.chat_input("Escribe tu consulta o pídele que genere una imagen.
     
     # --- AUTO-RENOMBRADO DE CHAT ---
     renamed = False
-    from src.database.database import get_user_chats, update_chat_title
+    from src.database import get_user_chats, update_chat_title
     chats_actuales = get_user_chats(st.session_state.user_id)
     chat_actual = next((c for c in chats_actuales if c['id'] == st.session_state.chat_id), None)
     
@@ -1120,7 +1107,6 @@ if prompt := st.chat_input("Escribe tu consulta o pídele que genere una imagen.
                 st.error(error)
                 st.session_state.messages.append({"role": "assistant", "content": error})
             else:
-                from PIL import Image
                 img = Image.open(filepath)
                 st.image(img, caption=f"Obra: {prompt_artistico}", use_container_width=True)
                 render_download_button(filepath)
@@ -1146,7 +1132,6 @@ if prompt := st.chat_input("Escribe tu consulta o pídele que genere una imagen.
             _EXTS_VIDEO  = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.wmv'}
 
             if _ext in _EXTS_IMAGEN:
-                from PIL import Image
                 imagen_adjunta = Image.open(archivo)
                 texto_extraido = f"\\n*(Adjuntada imagen para análisis visual: {archivo.name})*"
             elif _ext in _EXTS_VIDEO:
@@ -1345,3 +1330,4 @@ if prompt := st.chat_input("Escribe tu consulta o pídele que genere una imagen.
 
     if renamed:
         st.rerun()
+```

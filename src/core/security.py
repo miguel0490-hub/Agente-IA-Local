@@ -6,8 +6,15 @@ _RATE_LIMITS: Dict[str, list] = {}
 
 def check_rate_limit(user_id: str, limit: int = 15, window_seconds: int = 60) -> bool:
     """
-    Limita las peticiones (Sliding Window).
-    Por defecto: 15 peticiones por minuto por usuario.
+    Valida si un usuario puede emitir una nueva petición.
+
+    Args:
+        user_id: Identificador único del usuario.
+        limit: Número máximo de solicitudes permitidas en la ventana.
+        window_seconds: Duración de la ventana deslizante en segundos.
+
+    Returns:
+        bool: ``True`` cuando la petición está permitida, ``False`` cuando se excede el límite.
     """
     now = time.time()
     user_key = str(user_id)

@@ -449,20 +449,7 @@ ESTILOS_CSS = f"""
     .stChatMessage [data-testid="chatAvatarIcon-assistant"] {{ background: linear-gradient(135deg, {Colors.PRIMARY}, {Colors.SECONDARY}) !important; box-shadow: 0 0 15px rgba(0, 242, 254, 0.6); }}
 
     /* ── File Uploader ──────────────────────────────────────── */
-    [data-testid="stFileUploader"] {{
-        background-color: rgba(0,0,0,0.2) !important;
-        padding: {Spacing.PADDING_MD} !important;
-        border-radius: {Spacing.BORDER_RADIUS_SM} !important;
-        border: 2px dashed {Colors.GLASS_BORDER} !important;
-        position: relative !important;
-        z-index: auto !important;
-        pointer-events: auto !important;
-        transition: all 0.3s ease;
-    }}
-    [data-testid="stFileUploader"]:hover {{
-        border-color: {Colors.PRIMARY} !important;
-        background-color: rgba(0, 242, 254, 0.05) !important;
-    }}
+    /* Mantener comportamiento nativo para evitar conflictos de drag&drop */
 
     /* ── Menús Desplegables (Selectbox) ─────────────────────── */
     div[data-baseweb="select"] > div {{
@@ -498,6 +485,20 @@ ESTILOS_CSS = f"""
         [data-testid="stSidebar"] > div:first-child {{ height: 100% !important; max-height: 100vh !important; padding-bottom: 50px !important; }}
         .block-container {{ padding-left: 15px !important; padding-right: 15px !important; padding-bottom: 130px !important; }}
         h1 {{ font-size: 2rem !important; }}
+    }}
+
+    /* =========================================================
+       FIX UI: Ocultar texto "Press Ctrl+Enter to apply"
+       ========================================================= */
+    [data-testid="InputInstructions"] {{
+        display: none !important;
+        visibility: hidden !important;
+    }}
+    div[data-testid="stTextArea"] small {{
+        display: none !important;
+    }}
+    .stTextArea div[class*="instructions"] {{
+        display: none !important;
     }}
 </style>
 """

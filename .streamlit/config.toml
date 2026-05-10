@@ -6,3 +6,5 @@ secondaryBackgroundColor='#1E293B'
 [server]
 port = 8501
 address = "0.0.0.0"
+maxUploadSize = 25
+enableXsrfProtection = true

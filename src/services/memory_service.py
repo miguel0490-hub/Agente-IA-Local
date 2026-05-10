@@ -1,7 +1,7 @@
 import os
 import json
 import threading
-from src.database import get_chat_messages, save_chat_messages, delete_chat
+from src.database.database import get_chat_messages, save_chat_messages, delete_chat
 
 # Tokens/Límites de Seguridad (Aprox. 4 chars por token)
 MAX_HISTORIAL_MENSAJES = 20
@@ -22,8 +22,14 @@ def guardar_memoria(chat_id: int, mensajes: list, api_keys: dict = None):
     if not chat_id:
         return
 
-    # Hacemos una copia profunda superficial para evitar race conditions en Streamlit
+    # Truncado preventivo: conservar system inicial (si existe) + últimos 30 mensajes.
     mensajes_copy = list(mensajes)
+    if mensajes_copy and mensajes_copy[0].get("role") == "system":
+        mensaje_system = mensajes_copy[0]
+        mensajes_conversacion = mensajes_copy[1:]
+        mensajes_copy = [mensaje_system] + mensajes_conversacion[-30:]
+    else:
+        mensajes_copy = mensajes_copy[-30:]
     
     def _guardar_background(c_id, msgs, keys):
         mensajes_optimizados = _optimizar_ventana_deslizante(msgs, keys)

@@ -1,5 +1,5 @@
 """
-src/database.py — Capa de Persistencia de Datos.
+src/database/database.py — Capa de Persistencia de Datos.
 Migrada a SQLAlchemy con arquitectura dual:
 - PostgreSQL en producción vía DATABASE_URL
 - SQLite local como fallback
@@ -10,7 +10,7 @@ import uuid
 import bcrypt
 import base64
 import hashlib
-from datetime import datetime
+from datetime import datetime, timedelta
 from cryptography.fernet import Fernet
 from sqlalchemy import (
     create_engine,
@@ -64,8 +64,11 @@ users_table = Table(
     Column("encrypted_api_keys", Text),
     Column("is_verified", Integer, nullable=False, server_default=text("0")),
     Column("verification_token", Text),
+    Column("verification_token_expires", DateTime),
     Column("reset_token", Text),
+    Column("reset_token_expires", DateTime),
     Column("remember_token", Text),
+    Column("remember_token_expires", DateTime),
 )
 
 chats_table = Table(
@@ -133,6 +136,12 @@ def init_db():
                 conn.execute(text("ALTER TABLE users ADD COLUMN reset_token TEXT"))
             if "remember_token" not in user_cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN remember_token TEXT"))
+            if "verification_token_expires" not in user_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN verification_token_expires TIMESTAMP"))
+            if "reset_token_expires" not in user_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN reset_token_expires TIMESTAMP"))
+            if "remember_token_expires" not in user_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN remember_token_expires TIMESTAMP"))
     except Exception as e:
         logger.error(f"Error inicializando/migrando base de datos: {e}")
         raise
@@ -143,13 +152,14 @@ def register_user(first_name, last_name, email, username, password):
     salt = bcrypt.gensalt()
     hashed = bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
     token = uuid.uuid4().hex
+    token_expires = datetime.now() + timedelta(hours=48)
     try:
         with engine.begin() as conn:
             if _is_postgres():
                 user_id = conn.execute(
                     text(
-                        "INSERT INTO users (first_name, last_name, email, username, password_hash, encrypted_api_keys, is_verified, verification_token) "
-                        "VALUES (:first_name, :last_name, :email, :username, :password_hash, :encrypted_api_keys, :is_verified, :verification_token) "
+                        "INSERT INTO users (first_name, last_name, email, username, password_hash, encrypted_api_keys, is_verified, verification_token, verification_token_expires) "
+                        "VALUES (:first_name, :last_name, :email, :username, :password_hash, :encrypted_api_keys, :is_verified, :verification_token, :verification_token_expires) "
                         "RETURNING id"
                     ),
                     {
@@ -161,13 +171,14 @@ def register_user(first_name, last_name, email, username, password):
                         "encrypted_api_keys": json.dumps({}),
                         "is_verified": 0,
                         "verification_token": token,
+                        "verification_token_expires": token_expires,
                     },
                 ).scalar_one()
             else:
                 conn.execute(
                     text(
-                        "INSERT INTO users (first_name, last_name, email, username, password_hash, encrypted_api_keys, is_verified, verification_token) "
-                        "VALUES (:first_name, :last_name, :email, :username, :password_hash, :encrypted_api_keys, :is_verified, :verification_token)"
+                        "INSERT INTO users (first_name, last_name, email, username, password_hash, encrypted_api_keys, is_verified, verification_token, verification_token_expires) "
+                        "VALUES (:first_name, :last_name, :email, :username, :password_hash, :encrypted_api_keys, :is_verified, :verification_token, :verification_token_expires)"
                     ),
                     {
                         "first_name": first_name,
@@ -178,6 +189,7 @@ def register_user(first_name, last_name, email, username, password):
                         "encrypted_api_keys": json.dumps({}),
                         "is_verified": 0,
                         "verification_token": token,
+                        "verification_token_expires": token_expires,
                     },
                 )
                 user_id = conn.execute(
@@ -198,12 +210,20 @@ def register_user(first_name, last_name, email, username, password):
 def verify_user_token(token):
     with engine.begin() as conn:
         row = conn.execute(
-            text("SELECT id FROM users WHERE verification_token = :token"),
-            {"token": token},
+            text(
+                "SELECT id FROM users "
+                "WHERE verification_token = :token "
+                "AND verification_token_expires IS NOT NULL "
+                "AND verification_token_expires > :now"
+            ),
+            {"token": token, "now": datetime.now()},
         ).fetchone()
         if row:
             conn.execute(
-                text("UPDATE users SET is_verified = 1, verification_token = NULL WHERE id = :user_id"),
+                text(
+                    "UPDATE users SET is_verified = 1, verification_token = NULL, verification_token_expires = NULL "
+                    "WHERE id = :user_id"
+                ),
                 {"user_id": row._mapping["id"]},
             )
             return True
@@ -365,18 +385,21 @@ def save_chat_messages(chat_id, messages):
 
 
 # --- Remember Me (Token de Sesión Persistente) ---
-def update_remember_token(user_id: int, token: str) -> None:
+def update_remember_token(user_id: int, token: str, expires_at: datetime) -> None:
     with engine.begin() as conn:
         conn.execute(
-            text("UPDATE users SET remember_token = :token WHERE id = :user_id"),
-            {"token": token, "user_id": user_id},
+            text(
+                "UPDATE users SET remember_token = :token, remember_token_expires = :expires_at "
+                "WHERE id = :user_id"
+            ),
+            {"token": token, "expires_at": expires_at, "user_id": user_id},
         )
 
 
 def clear_remember_token(user_id: int) -> None:
     with engine.begin() as conn:
         conn.execute(
-            text("UPDATE users SET remember_token = NULL WHERE id = :user_id"),
+            text("UPDATE users SET remember_token = NULL, remember_token_expires = NULL WHERE id = :user_id"),
             {"user_id": user_id},
         )
 
@@ -386,8 +409,13 @@ def verify_remember_token(token: str) -> int | None:
         return None
     with engine.connect() as conn:
         row = conn.execute(
-            text("SELECT id FROM users WHERE remember_token = :token"),
-            {"token": token},
+            text(
+                "SELECT id FROM users "
+                "WHERE remember_token = :token "
+                "AND remember_token_expires IS NOT NULL "
+                "AND remember_token_expires > :now"
+            ),
+            {"token": token, "now": datetime.now()},
         ).fetchone()
     return row._mapping["id"] if row else None
 
@@ -401,9 +429,10 @@ def generate_password_reset_token(email):
         if not row:
             return False, None, None
         token = uuid.uuid4().hex
+        expires_at = datetime.now() + timedelta(hours=1)
         conn.execute(
-            text("UPDATE users SET reset_token = :token WHERE email = :email"),
-            {"token": token, "email": email},
+            text("UPDATE users SET reset_token = :token, reset_token_expires = :expires_at WHERE email = :email"),
+            {"token": token, "expires_at": expires_at, "email": email},
         )
         return True, row._mapping["first_name"], token
 
@@ -411,8 +440,13 @@ def generate_password_reset_token(email):
 def verify_reset_token(token):
     with engine.connect() as conn:
         row = conn.execute(
-            text("SELECT id, email FROM users WHERE reset_token = :token"),
-            {"token": token},
+            text(
+                "SELECT id, email FROM users "
+                "WHERE reset_token = :token "
+                "AND reset_token_expires IS NOT NULL "
+                "AND reset_token_expires > :now"
+            ),
+            {"token": token, "now": datetime.now()},
         ).fetchone()
     if row:
         return True, row._mapping["id"]
@@ -427,7 +461,10 @@ def update_password_with_token(token, new_password):
     hashed = bcrypt.hashpw(new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
     with engine.begin() as conn:
         conn.execute(
-            text("UPDATE users SET password_hash = :password_hash, reset_token = NULL WHERE id = :user_id"),
+            text(
+                "UPDATE users SET password_hash = :password_hash, reset_token = NULL, reset_token_expires = NULL "
+                "WHERE id = :user_id"
+            ),
             {"password_hash": hashed, "user_id": user_id},
         )
     return True, "Contraseña actualizada con éxito."
