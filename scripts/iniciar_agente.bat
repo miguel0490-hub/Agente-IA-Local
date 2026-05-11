@@ -1,5 +1,6 @@
 @echo off
 title SuperAgente IA Pro
+cd /d "%~dp0\.."
 cls
 echo =======================================================
 echo   Despertando al SuperAgente IA Pro...

@@ -63,6 +63,9 @@ users_table = Table(
     Column("password_hash", Text, nullable=False),
     Column("encrypted_api_keys", Text),
     Column("is_verified", Integer, nullable=False, server_default=text("0")),
+    Column("is_admin", Integer, nullable=False, server_default=text("0")),
+    Column("is_active", Integer, nullable=False, server_default=text("1")),
+    Column("created_at", DateTime, server_default=func.now()),
     Column("verification_token", Text),
     Column("verification_token_expires", DateTime),
     Column("reset_token", Text),
@@ -125,6 +128,9 @@ def get_cipher():
     return Fernet(derived_key)
 
 
+_ADMIN_BOOTSTRAP_USERNAME = "Miguel0490"
+
+
 def init_db():
     """Crea tablas y aplica migraciones mínimas compatibles con Postgres/SQLite."""
     metadata.create_all(engine)
@@ -142,6 +148,18 @@ def init_db():
                 conn.execute(text("ALTER TABLE users ADD COLUMN reset_token_expires TIMESTAMP"))
             if "remember_token_expires" not in user_cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN remember_token_expires TIMESTAMP"))
+            if "is_admin" not in user_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0"))
+            if "is_active" not in user_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1"))
+            if "created_at" not in user_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN created_at TIMESTAMP"))
+
+            # Auto-promote bootstrap admin
+            conn.execute(
+                text("UPDATE users SET is_admin = 1 WHERE username = :username AND is_admin = 0"),
+                {"username": _ADMIN_BOOTSTRAP_USERNAME},
+            )
     except Exception as e:
         logger.error(f"Error inicializando/migrando base de datos: {e}")
         raise
@@ -260,11 +278,13 @@ def verify_user_token(token):
 def verify_login(username, password):
     with engine.connect() as conn:
         row = conn.execute(
-            text("SELECT id, password_hash, is_verified FROM users WHERE username = :username"),
+            text("SELECT id, password_hash, is_verified, is_active FROM users WHERE username = :username"),
             {"username": username},
         ).fetchone()
     if row:
         if bcrypt.checkpw(password.encode("utf-8"), row._mapping["password_hash"].encode("utf-8")):
+            if row._mapping.get("is_active", 1) == 0:
+                return False, "Tu cuenta ha sido suspendida. Contacta al administrador."
             if row._mapping["is_verified"] == 0:
                 return False, "Tu cuenta no está verificada. Por favor, revisa tu correo electrónico para activarla."
             return True, row._mapping["id"]
@@ -324,6 +344,105 @@ def get_user_api_keys(user_id):
             logger.error(f"Error interno desencriptando API keys para el usuario {user_id}")
             return {}
     return {}
+
+
+# --- Administración ---
+
+def is_user_admin(user_id: int) -> bool:
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT is_admin FROM users WHERE id = :uid"), {"uid": user_id}
+        ).fetchone()
+    return bool(row and row._mapping["is_admin"])
+
+
+def get_all_users(search_query: str | None = None) -> list[dict]:
+    sql = (
+        "SELECT id, first_name, last_name, email, username, "
+        "is_verified, is_admin, is_active, created_at FROM users"
+    )
+    params: dict = {}
+    if search_query:
+        like = f"%{search_query}%"
+        sql += (
+            " WHERE first_name LIKE :q OR last_name LIKE :q "
+            "OR email LIKE :q OR username LIKE :q"
+        )
+        params["q"] = like
+    sql += " ORDER BY id DESC"
+    with engine.connect() as conn:
+        rows = conn.execute(text(sql), params).fetchall()
+    return [dict(r._mapping) for r in rows]
+
+
+def get_user_stats() -> dict:
+    with engine.connect() as conn:
+        total = conn.execute(text("SELECT COUNT(*) FROM users")).scalar() or 0
+        verified = conn.execute(text("SELECT COUNT(*) FROM users WHERE is_verified = 1")).scalar() or 0
+        active = conn.execute(text("SELECT COUNT(*) FROM users WHERE is_active = 1")).scalar() or 0
+        admins = conn.execute(text("SELECT COUNT(*) FROM users WHERE is_admin = 1")).scalar() or 0
+        week_ago = datetime.now() - timedelta(days=7)
+        recent = conn.execute(
+            text("SELECT COUNT(*) FROM users WHERE created_at IS NOT NULL AND created_at >= :d"),
+            {"d": week_ago},
+        ).scalar() or 0
+    return {
+        "total": total,
+        "verified": verified,
+        "active": active,
+        "admins": admins,
+        "recent_7d": recent,
+    }
+
+
+def toggle_user_active(user_id: int, active: bool) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE users SET is_active = :val WHERE id = :uid"),
+            {"val": 1 if active else 0, "uid": user_id},
+        )
+
+
+def admin_delete_user(user_id: int) -> None:
+    with engine.begin() as conn:
+        chat_ids = conn.execute(
+            text("SELECT id FROM chats WHERE user_id = :uid"), {"uid": user_id}
+        ).fetchall()
+        for row in chat_ids:
+            conn.execute(text("DELETE FROM messages WHERE chat_id = :cid"), {"cid": row._mapping["id"]})
+        conn.execute(text("DELETE FROM chats WHERE user_id = :uid"), {"uid": user_id})
+        conn.execute(text("DELETE FROM users WHERE id = :uid"), {"uid": user_id})
+
+
+def set_user_admin(user_id: int, is_admin: bool) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE users SET is_admin = :val WHERE id = :uid"),
+            {"val": 1 if is_admin else 0, "uid": user_id},
+        )
+
+
+def force_verify_user(user_id: int) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE users SET is_verified = 1, verification_token = NULL, "
+                "verification_token_expires = NULL WHERE id = :uid"
+            ),
+            {"uid": user_id},
+        )
+
+
+def admin_reset_password(user_id: int, new_password: str) -> tuple[bool, str]:
+    hashed = bcrypt.hashpw(new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    with engine.begin() as conn:
+        result = conn.execute(
+            text("UPDATE users SET password_hash = :pw WHERE id = :uid"),
+            {"pw": hashed, "uid": user_id},
+        )
+        if result.rowcount == 0:
+            return False, "Usuario no encontrado."
+    return True, "Contraseña reseteada con éxito."
 
 
 # --- Chats y Mensajes ---

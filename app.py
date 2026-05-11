@@ -43,6 +43,7 @@ from src.database.database import (
     get_user_profile,
     update_chat_title as update_chat_title_db,
     init_db,
+    is_user_admin,
 )
 from src.services.converter_service import run_conversion
 from src.services.memory_service import cargar_memoria, guardar_memoria, limpiar_memoria
@@ -62,6 +63,7 @@ from src.ui.auth.auth_gate import render_auth_gate
 from src.ui.auth.query_params_gate import handle_auth_query_params
 from src.ui.onboarding.onboarding_gate import render_onboarding_gate
 from src.ui.settings.control_center import render_control_center_dialog
+from src.ui.admin.admin_panel import render_admin_panel
 from src.ui.multimedia.converter_dialog import render_converter_dialog
 from src.ui.multimedia.sidebar_tools import render_multimedia_sidebar_tools
 from src.ui.components.chat_messages import render_chat_messages
@@ -185,6 +187,11 @@ def panel_ajustes():
     render_control_center_dialog(update_api_keys_fn=update_api_keys)
 
 
+@st.dialog("🛡️ Panel de Administración", width="large")
+def panel_admin():
+    render_admin_panel()
+
+
 # --- CONFIGURACIÓN DE CHATS EN SIDEBAR ---
 with st.sidebar:
     render_sidebar_profile(
@@ -192,6 +199,15 @@ with st.sidebar:
         cookie_manager=cookie_manager,
         clear_remember_token_fn=clear_remember_token,
     )
+
+    if is_user_admin(st.session_state.user_id):
+        if st.button("🛡️ Panel de Administración", key="btn_admin", use_container_width=True):
+            st.session_state.show_admin = True
+            st.rerun()
+        if st.session_state.get("show_admin"):
+            st.session_state.show_admin = False
+            panel_admin()
+        st.divider()
 
     render_chat_management(
         create_chat_fn=create_chat,
