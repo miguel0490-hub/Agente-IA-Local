@@ -36,8 +36,11 @@ def _env_float(name: str, default: float) -> float:
 
 def _continuation_prompt() -> str:
     return (
-        "Continúa exactamente desde donde te quedaste, sin repetir contenido, "
-        "manteniendo formato y contexto."
+        "Tu respuesta anterior fue cortada por el límite de tokens. "
+        "Continúa EXACTAMENTE desde donde te quedaste, sin repetir contenido, "
+        "manteniendo el mismo formato, estructura y contexto. "
+        "Si estabas generando un bloque JSON con HTML, retoma el HTML desde la última línea emitida "
+        "y cierra correctamente todas las etiquetas y el JSON al final."
     )
 
 
@@ -89,17 +92,39 @@ class GeminiProvider(LLMProvider):
                 ),
             ]
 
+            max_tokens = _env_int("GEMINI_MAX_TOKENS", 65536)
+            temperature = _env_float("GEMINI_TEMPERATURE", 0.2)
+            max_rounds = max(1, _env_int("GEMINI_CONTINUATION_ROUNDS", 3))
+
             config = types.GenerateContentConfig(
                 system_instruction=system_instruction or PROMPT_TECH_LEAD,
-                temperature=_env_float("GEMINI_TEMPERATURE", 0.2),
-                max_output_tokens=_env_int("GEMINI_MAX_TOKENS", 8192),
+                temperature=temperature,
+                max_output_tokens=max_tokens,
                 safety_settings=safety_settings
             )
 
             chat = cliente.chats.create(model=model_name, config=config)
-            for frag in chat.send_message_stream(carga_util):
-                if frag.text is not None:
-                    yield _clean_model_noise(frag.text)
+
+            for _round in range(max_rounds):
+                streamed_parts = []
+                finish_reason = None
+                for frag in chat.send_message_stream(carga_util):
+                    if frag.text is not None:
+                        streamed_parts.append(frag.text)
+                        yield _clean_model_noise(frag.text)
+                    if hasattr(frag, "candidates") and frag.candidates:
+                        candidate = frag.candidates[0]
+                        if hasattr(candidate, "finish_reason") and candidate.finish_reason:
+                            fr_val = str(candidate.finish_reason).upper()
+                            if "MAX_TOKENS" in fr_val or "LENGTH" in fr_val:
+                                finish_reason = "length"
+
+                full_round = "".join(streamed_parts).strip()
+                if finish_reason != "length" or not full_round:
+                    return
+
+                carga_util = [_continuation_prompt()]
+
         except Exception as e: 
             raise
             
@@ -161,9 +186,9 @@ class GroqProvider(LLMProvider):
             if fallback_model and fallback_model != preferred_model:
                 candidate_models.append(fallback_model)
 
-            max_tokens = _env_int("GROQ_MAX_TOKENS", 8192)
+            max_tokens = _env_int("GROQ_MAX_TOKENS", 32768)
             temperature = _env_float("GROQ_TEMPERATURE", 0.2)
-            max_rounds = max(1, _env_int("GROQ_CONTINUATION_ROUNDS", 2))
+            max_rounds = max(1, _env_int("GROQ_CONTINUATION_ROUNDS", 3))
 
             last_error = None
             for model_name in candidate_models:
@@ -227,9 +252,9 @@ class OpenRouterProvider(LLMProvider):
 
             # Modelo configurable + fallback robusto para evitar caídas por modelos retirados.
             preferred_model = os.getenv("OPENROUTER_MODEL", "openrouter/auto")
-            max_tokens = _env_int("OPENROUTER_MAX_TOKENS", 8192)
+            max_tokens = _env_int("OPENROUTER_MAX_TOKENS", 16384)
             temperature = _env_float("OPENROUTER_TEMPERATURE", 0.2)
-            max_rounds = max(1, _env_int("OPENROUTER_CONTINUATION_ROUNDS", 2))
+            max_rounds = max(1, _env_int("OPENROUTER_CONTINUATION_ROUNDS", 3))
             candidate_models = [preferred_model]
             if preferred_model != "openrouter/auto":
                 candidate_models.append("openrouter/auto")
@@ -279,27 +304,56 @@ class OllamaProvider(LLMProvider):
         super().__init__(api_key=os.getenv("OLLAMA_API_KEY", "ollama-local"))
         self.model_name = model_name or os.getenv("OLLAMA_MODEL", "llama3.1")
         self.base_url = base_url or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+        if self.base_url and not os.getenv("OLLAMA_BASE_URL"):
+            from src.security.url_validator import validate_url
+            result = validate_url(self.base_url, context="ollama_base_url")
+            if not result.safe:
+                raise ValueError(f"URL Ollama bloqueada: {result.reason}")
 
     def stream_chat(self, mensaje: str, historial: list, system_instruction: str = None):
         try:
-            cliente = OpenAI(api_key=self.api_key, base_url=self.base_url)
+            import httpx
+            cliente = OpenAI(
+                api_key=self.api_key,
+                base_url=self.base_url,
+                timeout=httpx.Timeout(connect=10.0, read=120.0, write=10.0, pool=10.0),
+            )
             mensajes = [{"role": "system", "content": system_instruction or PROMPT_TECH_LEAD}]
             for m in historial:
                 if m.get("content"):
                     mensajes.append({"role": m["role"], "content": m["content"]})
             mensajes.append({"role": "user", "content": mensaje})
 
-            stream = cliente.chat.completions.create(
-                model=self.model_name,
-                messages=mensajes,
-                stream=True,
-                max_tokens=_env_int("OLLAMA_MAX_TOKENS", 8192),
-                temperature=_env_float("OLLAMA_TEMPERATURE", 0.2),
-            )
-            for chunk in stream:
-                delta_content = chunk.choices[0].delta.content
-                if delta_content:
-                    yield _clean_model_noise(delta_content)
+            max_tokens = _env_int("OLLAMA_MAX_TOKENS", 32768)
+            temperature = _env_float("OLLAMA_TEMPERATURE", 0.2)
+            max_rounds = max(1, _env_int("OLLAMA_CONTINUATION_ROUNDS", 3))
+
+            convo_messages = list(mensajes)
+            for _ in range(max_rounds):
+                streamed_parts = []
+                finish_reason = None
+                stream = cliente.chat.completions.create(
+                    model=self.model_name,
+                    messages=convo_messages,
+                    stream=True,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                )
+                for chunk in stream:
+                    choice = chunk.choices[0]
+                    delta_content = choice.delta.content
+                    if delta_content:
+                        streamed_parts.append(delta_content)
+                        yield _clean_model_noise(delta_content)
+                    if getattr(choice, "finish_reason", None):
+                        finish_reason = choice.finish_reason
+
+                full_round = "".join(streamed_parts).strip()
+                if finish_reason != "length" or not full_round:
+                    return
+
+                convo_messages.append({"role": "assistant", "content": full_round})
+                convo_messages.append({"role": "user", "content": _continuation_prompt()})
         except Exception as e:
             yield f"\n\n❌ Error Ollama: {e}"
 
@@ -319,6 +373,10 @@ class CustomOpenAIProvider(LLMProvider):
         super().__init__(api_key=api_key)
         self.base_url = base_url.rstrip("/")
         self.model_name = model_name
+        from src.security.url_validator import validate_url
+        result = validate_url(self.base_url, context="custom_openai_base_url")
+        if not result.safe:
+            raise ValueError(f"URL bloqueada por política SSRF: {result.reason}")
 
     def stream_chat(self, mensaje: str, historial: list, system_instruction: str = None):
         if not self.api_key:
@@ -329,9 +387,11 @@ class CustomOpenAIProvider(LLMProvider):
             return
 
         try:
+            import httpx
             cliente = OpenAI(
                 api_key=self.api_key,
                 base_url=self.base_url,
+                timeout=httpx.Timeout(connect=10.0, read=120.0, write=10.0, pool=10.0),
             )
             mensajes = [{"role": "system", "content": system_instruction or PROMPT_TECH_LEAD}]
             for m in historial:
@@ -339,17 +399,36 @@ class CustomOpenAIProvider(LLMProvider):
                     mensajes.append({"role": m["role"], "content": m["content"]})
             mensajes.append({"role": "user", "content": mensaje})
 
-            stream = cliente.chat.completions.create(
-                model=self.model_name,
-                messages=mensajes,
-                stream=True,
-                max_tokens=_env_int("CUSTOM_OPENAI_MAX_TOKENS", 8192),
-                temperature=_env_float("CUSTOM_OPENAI_TEMPERATURE", 0.2),
-            )
-            for chunk in stream:
-                delta_content = chunk.choices[0].delta.content
-                if delta_content:
-                    yield _clean_model_noise(delta_content)
+            max_tokens = _env_int("CUSTOM_OPENAI_MAX_TOKENS", 16384)
+            temperature = _env_float("CUSTOM_OPENAI_TEMPERATURE", 0.2)
+            max_rounds = max(1, _env_int("CUSTOM_OPENAI_CONTINUATION_ROUNDS", 3))
+
+            convo_messages = list(mensajes)
+            for _ in range(max_rounds):
+                streamed_parts = []
+                finish_reason = None
+                stream = cliente.chat.completions.create(
+                    model=self.model_name,
+                    messages=convo_messages,
+                    stream=True,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                )
+                for chunk in stream:
+                    choice = chunk.choices[0]
+                    delta_content = choice.delta.content
+                    if delta_content:
+                        streamed_parts.append(delta_content)
+                        yield _clean_model_noise(delta_content)
+                    if getattr(choice, "finish_reason", None):
+                        finish_reason = choice.finish_reason
+
+                full_round = "".join(streamed_parts).strip()
+                if finish_reason != "length" or not full_round:
+                    return
+
+                convo_messages.append({"role": "assistant", "content": full_round})
+                convo_messages.append({"role": "user", "content": _continuation_prompt()})
         except Exception as e:
             error_str = str(e)
             if "402" in error_str or "Insufficient Balance" in error_str:

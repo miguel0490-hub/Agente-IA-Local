@@ -1,0 +1,16 @@
+apiVersion: v2
+name: superagente
+description: SuperAgente IA — Production-grade AI assistant platform
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - ai
+  - streamlit
+  - fastapi
+  - llm
+maintainers:
+  - name: SuperAgente Team
+home: https://github.com/superagente-ia/superagente
+sources:
+  - https://github.com/superagente-ia/superagente

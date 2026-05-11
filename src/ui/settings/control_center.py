@@ -88,18 +88,23 @@ def render_control_center_dialog(update_api_keys_fn) -> None:
 
             if st.form_submit_button("➕ Conectar Modelo", type="primary", use_container_width=True):
                 if cm_name and cm_url and cm_key and cm_model:
-                    new_model = {
-                        "name": cm_name.strip(),
-                        "base_url": cm_url.strip(),
-                        "api_key": cm_key.strip(),
-                        "model_id": cm_model.strip(),
-                    }
-                    updated_list = custom_models + [new_model]
-                    updated_keys = {**st.session_state.api_keys, "CUSTOM_MODELS": updated_list}
-                    update_api_keys_fn(st.session_state.user_id, updated_keys)
-                    st.session_state.api_keys = updated_keys
-                    st.success(f"✅ '{cm_name}' conectado con éxito.")
-                    st.rerun()
+                    from src.security.url_validator import validate_url
+                    url_check = validate_url(cm_url.strip(), context="custom_model_save")
+                    if not url_check.safe:
+                        st.error(f"⛔ URL bloqueada: {url_check.reason}")
+                    else:
+                        new_model = {
+                            "name": cm_name.strip(),
+                            "base_url": cm_url.strip(),
+                            "api_key": cm_key.strip(),
+                            "model_id": cm_model.strip(),
+                        }
+                        updated_list = custom_models + [new_model]
+                        updated_keys = {**st.session_state.api_keys, "CUSTOM_MODELS": updated_list}
+                        update_api_keys_fn(st.session_state.user_id, updated_keys)
+                        st.session_state.api_keys = updated_keys
+                        st.success(f"✅ '{cm_name}' conectado con éxito.")
+                        st.rerun()
                 else:
                     st.warning("⚠️ Completa todos los campos para conectar el modelo.")
 

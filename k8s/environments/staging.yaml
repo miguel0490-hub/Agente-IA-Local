@@ -1,0 +1,94 @@
+# ============================================================
+# SuperAgente IA — Staging Environment Overrides
+# Usage: helm upgrade --install superagente ./k8s/helm/superagente \
+#          -f k8s/environments/staging.yaml -n superagente
+# ============================================================
+
+global:
+  namespace: superagente-staging
+  environment: staging
+
+image:
+  tag: staging
+  pullPolicy: Always
+
+app:
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: 200m
+      memory: 384Mi
+    limits:
+      cpu: 500m
+      memory: 768Mi
+
+worker:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 250m
+      memory: 512Mi
+
+monitoring:
+  enabled: true
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-staging
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "25m"
+  hosts:
+    - host: staging.superagente.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: superagente-staging-tls
+      hosts:
+        - staging.superagente.example.com
+
+config:
+  ENVIRONMENT: staging
+  UPLOAD_POLICY: strict
+  MAX_IMAGE_MB: "10"
+  MAX_VIDEO_MB: "50"
+  MAX_AUDIO_MB: "50"
+  MAX_DOC_MB: "15"
+  RATE_LIMIT_CHAT_LIMIT: "20"
+  RATE_LIMIT_CHAT_WINDOW: "60"
+  LOGIN_REQUIRE_REDIS: "1"
+  ENABLE_ASYNC_TASKS: "1"
+  RQ_QUEUE_NAME: superagente
+  SENTRY_TRACES_SAMPLE_RATE: "1.0"
+
+networkPolicy:
+  enabled: true

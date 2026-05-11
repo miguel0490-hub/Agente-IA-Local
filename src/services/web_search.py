@@ -1,4 +1,4 @@
-def search_web(query: str, max_results: int = 5) -> str:
+def search_web(query: str, max_results: int = 10) -> str:
     """
     Realiza una búsqueda en DuckDuckGo y devuelve un resumen formateado
     de los primeros resultados para inyectar al LLM.
@@ -7,20 +7,30 @@ def search_web(query: str, max_results: int = 5) -> str:
         from ddgs import DDGS
         ddgs = DDGS()
         results = list(ddgs.text(query, max_results=max_results))
-        
+
         if not results:
             return f"Búsqueda web sin resultados para: '{query}'"
-            
-        formatted_results = f"### Resultados Web de la búsqueda: '{query}'\n\n"
+
+        formatted_results = (
+            f"### Resultados Web de la búsqueda: '{query}'\n"
+            f"Total de fuentes encontradas: {len(results)}\n\n"
+        )
         for i, res in enumerate(results, 1):
             title = res.get('title', 'Sin Título')
             href = res.get('href', 'Sin URL')
             body = res.get('body', 'Sin contenido')
-            
+
             formatted_results += f"**[{i}] {title}**\n"
             formatted_results += f"URL: {href}\n"
-            formatted_results += f"Resumen: {body}\n\n"
-            
+            formatted_results += f"Contenido: {body}\n\n"
+
+        formatted_results += (
+            "---\n"
+            "INSTRUCCIÓN: Sintetiza TODOS estos resultados de forma exhaustiva. "
+            "Si el usuario ha pedido un documento (PDF, informe, etc.), genera contenido LARGO y COMPLETO, "
+            "no un resumen breve. Usa datos, cifras y detalles concretos de cada fuente.\n"
+        )
+
         return formatted_results.strip()
     except ModuleNotFoundError:
         return (

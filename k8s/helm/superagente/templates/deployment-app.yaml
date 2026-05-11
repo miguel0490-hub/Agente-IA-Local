@@ -1,0 +1,105 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "superagente.fullname" . }}-app
+  namespace: {{ include "superagente.namespace" . }}
+  labels:
+    {{- include "superagente.componentLabels" (dict "ctx" . "component" "app") | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.app.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      {{- include "superagente.componentSelectorLabels" (dict "ctx" . "component" "app") | nindent 6 }}
+  strategy:
+    {{- toYaml .Values.app.strategy | nindent 4 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+      labels:
+        {{- include "superagente.componentLabels" (dict "ctx" . "component" "app") | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "superagente.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "superagente.podSecurityContext" . | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.app.terminationGracePeriodSeconds }}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      {{- with .Values.app.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.app.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.app.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "superagente.componentSelectorLabels" (dict "ctx" . "component" "app") | nindent 14 }}
+      containers:
+        - name: app
+          image: {{ include "superagente.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- include "superagente.containerSecurityContext" . | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.app.port }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "superagente.fullname" . }}-config
+            - secretRef:
+                name: {{ include "superagente.fullname" . }}-secrets
+          {{- with .Values.app.extraEnv }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          startupProbe:
+            {{- toYaml .Values.app.startupProbe | nindent 12 }}
+          livenessProbe:
+            {{- toYaml .Values.app.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.app.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.app.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: app-data
+              mountPath: /app/data
+            - name: app-logs
+              mountPath: /app/logs
+            - name: app-images
+              mountPath: /app/generated_images
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 128Mi
+        - name: app-data
+          emptyDir:
+            sizeLimit: 1Gi
+        - name: app-logs
+          emptyDir:
+            sizeLimit: 256Mi
+        - name: app-images
+          emptyDir:
+            sizeLimit: 512Mi

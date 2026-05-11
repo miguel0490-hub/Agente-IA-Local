@@ -1,0 +1,112 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha
+            type=ref,event=branch
+            type=raw,value=latest
+
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign Docker image (keyless via Fulcio + Rekor)
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}"
+          cosign sign --yes "${IMAGE}"
+
+      - name: Generate SBOM for Docker image
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          format: cyclonedx-json
+          output-file: sbom-deploy-cyclonedx.json
+
+      - name: Attach SBOM to image with Cosign
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}"
+          cosign attest --yes \
+            --predicate sbom-deploy-cyclonedx.json \
+            --type cyclonedx \
+            "${IMAGE}"
+
+      - name: Generate build provenance attestation
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-sbom-cyclonedx
+          path: sbom-deploy-cyclonedx.json
+          retention-days: 90
+
+  deploy-staging:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Deploy to staging
+        run: |
+          echo "Staging deployment placeholder"
+          echo "Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+          echo "Configure your staging server connection here"
+
+  deploy-production:
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://superagenteiapro.com
+    steps:
+      - name: Deploy to production
+        run: |
+          echo "Production deployment placeholder (requires manual approval)"
+          echo "Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+          echo "Configure your production server connection here"

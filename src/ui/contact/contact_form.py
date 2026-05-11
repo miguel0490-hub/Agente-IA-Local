@@ -58,16 +58,20 @@ def render_contact_form() -> None:
 
 def _notify_admins(user_id: int, subject: str, message: str) -> None:
     """Envía notificación por email a todos los admins."""
+    from src.core.sanitizer import escape_user_data as _esc
+
     profile = get_user_profile(user_id)
-    username = profile.get("username", "desconocido")
-    full_name = f"{profile.get('first_name', '')} {profile.get('last_name', '')}".strip()
-    user_email = profile.get("email", "")
+    username = _esc(profile.get("username", "desconocido"))
+    full_name = _esc(f"{profile.get('first_name', '')} {profile.get('last_name', '')}".strip())
+    user_email = _esc(profile.get("email", ""))
+    safe_subject = _esc(subject)
+    safe_message = _esc(message).replace("\n", "<br>")
 
     if not ADMIN_NOTIFICATION_EMAIL:
         return
     admin_emails = [ADMIN_NOTIFICATION_EMAIL]
 
-    html = f"""
+    html_body = f"""
     <html>
     <body style="background-color:#0F172A;padding:40px;font-family:Arial,sans-serif;">
       <div style="background:#1E293B;border-radius:12px;padding:30px;max-width:550px;margin:0 auto;">
@@ -78,10 +82,10 @@ def _notify_admins(user_id: int, subject: str, message: str) -> None:
           <tr><td style="padding:6px 0;color:#94A3B8;">Email:</td>
               <td style="padding:6px 0;">{user_email}</td></tr>
           <tr><td style="padding:6px 0;color:#94A3B8;">Asunto:</td>
-              <td style="padding:6px 0;"><strong>{subject}</strong></td></tr>
+              <td style="padding:6px 0;"><strong>{safe_subject}</strong></td></tr>
         </table>
         <div style="background:#0F172A;border-radius:8px;padding:16px;margin-top:16px;color:#F8FAFC;font-size:14px;line-height:1.6;">
-          {message.replace(chr(10), '<br>')}
+          {safe_message}
         </div>
         <p style="color:#64748B;font-size:12px;margin-top:24px;">
           Responde desde el Panel de Administración de SuperAgente IA Pro.
@@ -91,5 +95,5 @@ def _notify_admins(user_id: int, subject: str, message: str) -> None:
     </html>
     """
 
-    for email in admin_emails:
-        _send_email(email, f"[Contacto] {subject} — @{username}", html)
+    for email_addr in admin_emails:
+        _send_email(email_addr, f"[Contacto] {subject} — @{profile.get('username', '')}", html_body)

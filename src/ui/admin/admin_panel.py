@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+from src.core.sanitizer import escape_user_data as _esc
 from src.database.database import (
     admin_delete_user,
     admin_reset_password,
@@ -63,7 +64,7 @@ def _render_dashboard() -> None:
             verified_icon = "✅" if u["is_verified"] else "❌"
             st.markdown(
                 f'<p style="color:#F8FAFC;font-size:0.95rem;margin:4px 0;">'
-                f'<strong>@{u["username"]}</strong> — {u["first_name"]} {u["last_name"]} — '
+                f'<strong>@{_esc(u["username"])}</strong> — {_esc(u["first_name"])} {_esc(u["last_name"])} — '
                 f'{verified_icon} — <span style="color:#94A3B8;">{date_str}</span></p>',
                 unsafe_allow_html=True,
             )
@@ -232,20 +233,20 @@ def _render_contact_messages() -> None:
         with st.container(border=True):
             st.markdown(
                 f'<p style="color:#00F2FE;font-size:1rem;font-weight:700;margin:0 0 4px;">'
-                f'{msg["subject"]}</p>',
+                f'{_esc(msg["subject"])}</p>',
                 unsafe_allow_html=True,
             )
             st.markdown(
                 f'<p style="color:#94A3B8;font-size:0.85rem;margin:0 0 8px;">'
-                f'De: <strong style="color:#F8FAFC;">@{msg["username"]}</strong> '
-                f'({msg["first_name"]} {msg["last_name"]}) — '
-                f'{msg["email"]} — {date_str} — {status_label}</p>',
+                f'De: <strong style="color:#F8FAFC;">@{_esc(msg["username"])}</strong> '
+                f'({_esc(msg["first_name"])} {_esc(msg["last_name"])}) — '
+                f'{_esc(msg["email"])} — {date_str} — {status_label}</p>',
                 unsafe_allow_html=True,
             )
             st.markdown(
                 f'<div style="background:#0F172A;border-radius:8px;padding:12px;'
                 f'color:#F8FAFC;font-size:0.9rem;line-height:1.5;margin-bottom:8px;">'
-                f'{msg["message"]}</div>',
+                f'{_esc(msg["message"])}</div>',
                 unsafe_allow_html=True,
             )
 
@@ -253,7 +254,7 @@ def _render_contact_messages() -> None:
                 st.markdown(
                     f'<div style="background:#1A3A2A;border-radius:8px;padding:12px;'
                     f'color:#A7F3D0;font-size:0.9rem;line-height:1.5;margin-bottom:8px;">'
-                    f'<strong>Respuesta del admin:</strong><br>{msg["admin_reply"]}</div>',
+                    f'<strong>Respuesta del admin:</strong><br>{_esc(msg["admin_reply"])}</div>',
                     unsafe_allow_html=True,
                 )
 

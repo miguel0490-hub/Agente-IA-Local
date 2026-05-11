@@ -40,26 +40,22 @@ class FileFactory:
         Retorna la ruta absoluta del archivo resultante o None si falló.
         """
         import os
-        from pathlib import Path
         import datetime
+        from src.security.path_guard import safe_filename as _safe_filename
 
         raw_filename = tool_data.get("filename", f"file_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}.txt")
-        # Sanitización estricta: extraer solo el nombre base, eliminando rutas relativas (../)
-        safe_filename = Path(raw_filename).name
-        if not safe_filename or safe_filename.startswith('.'):
-            safe_filename = f"file_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}.txt"
-        filepath = os.path.join(self.output_dir, safe_filename)
+        filepath = str(_safe_filename(raw_filename, self.output_dir, prefix_uuid=True))
         
         action = tool_data.get("action")
         content = tool_data.get("content", "")
         
         try:
             if action == "create_file":
-                if safe_filename.lower().endswith(".pdf"):
+                if filepath.lower().endswith(".pdf"):
                     return self._create_pdf(filepath, content)
-                elif safe_filename.lower().endswith((".xlsx", ".xls")):
+                elif filepath.lower().endswith((".xlsx", ".xls")):
                     return self._create_excel(filepath, content)
-                elif safe_filename.lower().endswith(".html"):
+                elif filepath.lower().endswith(".html"):
                     return self._create_text(filepath, content)
                 else:
                     return self._create_text(filepath, content)

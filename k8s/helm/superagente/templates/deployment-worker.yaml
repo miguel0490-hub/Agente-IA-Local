@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "superagente.fullname" . }}-worker
+  namespace: {{ include "superagente.namespace" . }}
+  labels:
+    {{- include "superagente.componentLabels" (dict "ctx" . "component" "worker") | nindent 4 }}
+spec:
+  replicas: {{ .Values.worker.replicaCount }}
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      {{- include "superagente.componentSelectorLabels" (dict "ctx" . "component" "worker") | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+      labels:
+        {{- include "superagente.componentLabels" (dict "ctx" . "component" "worker") | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "superagente.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "superagente.podSecurityContext" . | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.worker.terminationGracePeriodSeconds }}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      {{- with .Values.worker.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.worker.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.worker.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "superagente.componentSelectorLabels" (dict "ctx" . "component" "worker") | nindent 14 }}
+      containers:
+        - name: worker
+          image: {{ include "superagente.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- include "superagente.containerSecurityContext" . | nindent 12 }}
+          command:
+            {{- toYaml .Values.worker.command | nindent 12 }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "superagente.fullname" . }}-config
+            - secretRef:
+                name: {{ include "superagente.fullname" . }}-secrets
+          {{- with .Values.worker.extraEnv }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: app-data
+              mountPath: /app/data
+            - name: app-logs
+              mountPath: /app/logs
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 128Mi
+        - name: app-data
+          emptyDir:
+            sizeLimit: 1Gi
+        - name: app-logs
+          emptyDir:
+            sizeLimit: 256Mi

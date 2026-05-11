@@ -1,0 +1,106 @@
+{{/*
+Pod Security Standards — restricted profile.
+Since PSP is removed in k8s 1.25+, this template uses the built-in
+Pod Security Admission labels on the namespace (see namespace.yaml)
+plus a ValidatingAdmissionPolicy for clusters that support it (1.26+).
+For legacy clusters (< 1.25), uncomment the PSP block below.
+*/}}
+
+{{/*
+---
+# Legacy PSP — uncomment only for clusters < 1.25
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: {{ include "superagente.fullname" . }}-restricted
+  labels:
+    {{- include "superagente.labels" . | nindent 4 }}
+  annotations:
+    seccomp.security.alpha.kubernetes.io/allowedProfiles: runtime/default
+spec:
+  privileged: false
+  allowPrivilegeEscalation: false
+  requiredDropCapabilities:
+    - ALL
+  hostNetwork: false
+  hostIPC: false
+  hostPID: false
+  runAsUser:
+    rule: MustRunAsNonRoot
+  runAsGroup:
+    rule: MustRunAs
+    ranges:
+      - min: 1
+        max: 65534
+  fsGroup:
+    rule: MustRunAs
+    ranges:
+      - min: 1
+        max: 65534
+  supplementalGroups:
+    rule: MustRunAs
+    ranges:
+      - min: 1
+        max: 65534
+  seLinux:
+    rule: RunAsAny
+  volumes:
+    - configMap
+    - emptyDir
+    - projected
+    - secret
+    - downwardAPI
+  readOnlyRootFilesystem: true
+*/}}
+
+---
+# Enforce restricted Pod Security Standards via namespace labels.
+# The actual enforcement is handled by the namespace labels in namespace.yaml:
+#   pod-security.kubernetes.io/enforce: restricted
+#
+# Additionally, create a ResourceQuota to prevent resource abuse.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: {{ include "superagente.fullname" . }}-quota
+  namespace: {{ include "superagente.namespace" . }}
+  labels:
+    {{- include "superagente.labels" . | nindent 4 }}
+spec:
+  hard:
+    requests.cpu: "8"
+    requests.memory: 16Gi
+    limits.cpu: "16"
+    limits.memory: 32Gi
+    pods: "50"
+    services: "10"
+    secrets: "20"
+    configmaps: "20"
+---
+# LimitRange to ensure no container runs without resource bounds
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: {{ include "superagente.fullname" . }}-limits
+  namespace: {{ include "superagente.namespace" . }}
+  labels:
+    {{- include "superagente.labels" . | nindent 4 }}
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: 500m
+        memory: 512Mi
+      defaultRequest:
+        cpu: 100m
+        memory: 128Mi
+      max:
+        cpu: "4"
+        memory: 8Gi
+      min:
+        cpu: 50m
+        memory: 64Mi
+    - type: Pod
+      max:
+        cpu: "8"
+        memory: 16Gi

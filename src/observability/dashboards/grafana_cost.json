@@ -1,0 +1,199 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "title": "Cost per Provider",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(superagente_llm_cost_usd_total) by (provider)",
+          "legendFormat": "{{ provider }}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right" },
+        "pieType": "donut"
+      },
+      "fieldConfig": {
+        "defaults": { "unit": "currencyUSD" },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Cost per Model",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(superagente_llm_cost_usd_total) by (model)",
+          "legendFormat": "{{ model }}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right" },
+        "pieType": "donut"
+      },
+      "fieldConfig": {
+        "defaults": { "unit": "currencyUSD" },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Token Efficiency (Output / Input Ratio)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(superagente_llm_tokens_output_total[5m])) by (model) / sum(rate(superagente_llm_tokens_input_total[5m])) by (model)",
+          "legendFormat": "{{ model }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Daily Cost Trend",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(increase(superagente_llm_cost_usd_total[1d])) by (provider)",
+          "legendFormat": "{{ provider }} (daily)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "custom": { "drawStyle": "bars", "fillOpacity": 60, "lineWidth": 1 }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Weekly Cost Trend",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(increase(superagente_llm_cost_usd_total[7d])) by (provider)",
+          "legendFormat": "{{ provider }} (weekly)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "custom": { "drawStyle": "bars", "fillOpacity": 60, "lineWidth": 1 }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Cumulative Cost",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(superagente_llm_cost_usd_total) by (provider)",
+          "legendFormat": "{{ provider }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "custom": { "drawStyle": "line", "fillOpacity": 20, "lineWidth": 2 }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Monthly Cost Projection",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 32 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(superagente_llm_cost_usd_total[24h])) * 86400 * 30",
+          "legendFormat": "Projected Monthly",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 100 },
+              { "color": "red", "value": 500 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    }
+  ],
+  "refresh": "5m",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["superagente", "cost", "billing"],
+  "templating": {
+    "list": [
+      {
+        "name": "provider",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": "label_values(superagente_llm_cost_usd_total, provider)",
+        "includeAll": true,
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" },
+        "refresh": 2
+      },
+      {
+        "name": "model",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": "label_values(superagente_llm_cost_usd_total{provider=~\"$provider\"}, model)",
+        "includeAll": true,
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" },
+        "refresh": 2
+      }
+    ]
+  },
+  "time": { "from": "now-7d", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "SuperAgente — Cost Analytics",
+  "uid": "superagente-cost",
+  "version": 1
+}

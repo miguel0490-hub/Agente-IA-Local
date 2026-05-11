@@ -1,0 +1,22 @@
+{{- if .Values.monitoring.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "superagente.fullname" . }}-monitoring
+  namespace: {{ include "superagente.namespace" . }}
+  labels:
+    {{- include "superagente.componentLabels" (dict "ctx" . "component" "monitoring") | nindent 4 }}
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: {{ .Values.monitoring.port | quote }}
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.monitoring.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "superagente.componentSelectorLabels" (dict "ctx" . "component" "monitoring") | nindent 4 }}
+{{- end }}

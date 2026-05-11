@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "superagente.fullname" . }}-app
+  namespace: {{ include "superagente.namespace" . }}
+  labels:
+    {{- include "superagente.componentLabels" (dict "ctx" . "component" "app") | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.app.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "superagente.componentSelectorLabels" (dict "ctx" . "component" "app") | nindent 4 }}

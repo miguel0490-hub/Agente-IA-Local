@@ -2,3 +2,10 @@ pytest
 pytest-cov
 playwright
 pytest-playwright
+vulture>=2.14
+pip-audit
+bandit
+locust
+cyclonedx-bom>=4.0.0
+httpx
+syft

@@ -1,0 +1,193 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "title": "LLM Request Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(superagente_llm_requests_total[5m])) by (provider, model)",
+          "legendFormat": "{{ provider }}/{{ model }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 2 }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "LLM Error Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(superagente_llm_errors_total[5m])) by (provider, model, error_type)",
+          "legendFormat": "{{ provider }}/{{ model }} ({{ error_type }})",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 2 },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Token Usage (Input)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(superagente_llm_tokens_input_total[5m])) by (provider, model)",
+          "legendFormat": "IN {{ provider }}/{{ model }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "drawStyle": "bars", "fillOpacity": 60, "lineWidth": 1 }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Token Usage (Output)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(superagente_llm_tokens_output_total[5m])) by (provider, model)",
+          "legendFormat": "OUT {{ provider }}/{{ model }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "drawStyle": "bars", "fillOpacity": 60, "lineWidth": 1 }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "LLM Latency p50 / p95 / p99",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(superagente_llm_latency_seconds_bucket{provider=~\"$provider\", model=~\"$model\"}[5m])) by (le))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(superagente_llm_latency_seconds_bucket{provider=~\"$provider\", model=~\"$model\"}[5m])) by (le))",
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(superagente_llm_latency_seconds_bucket{provider=~\"$provider\", model=~\"$model\"}[5m])) by (le))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Cost Over Time",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(superagente_llm_cost_usd_total[5m])) by (provider, model) * 3600",
+          "legendFormat": "{{ provider }}/{{ model }} ($/h)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "custom": { "drawStyle": "line", "fillOpacity": 20, "lineWidth": 2 }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Provider Comparison — Requests",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(superagente_llm_requests_total) by (provider)",
+          "legendFormat": "{{ provider }}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right" },
+        "pieType": "donut"
+      }
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["superagente", "llm", "ai"],
+  "templating": {
+    "list": [
+      {
+        "name": "provider",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": "label_values(superagente_llm_requests_total, provider)",
+        "includeAll": true,
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" },
+        "refresh": 2
+      },
+      {
+        "name": "model",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": "label_values(superagente_llm_requests_total{provider=~\"$provider\"}, model)",
+        "includeAll": true,
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" },
+        "refresh": 2
+      }
+    ]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "SuperAgente — LLM Metrics",
+  "uid": "superagente-llm",
+  "version": 1
+}

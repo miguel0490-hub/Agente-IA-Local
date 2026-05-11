@@ -1,5 +1,6 @@
 import smtplib
 import os
+import threading
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Optional, Tuple
@@ -60,9 +61,9 @@ def _send_email(to: str, subject: str, html_body: str) -> bool:
     try:
         port = int(port_str)
         if port == 465:
-            srv = smtplib.SMTP_SSL(server_host, port)
+            srv = smtplib.SMTP_SSL(server_host, port, timeout=30)
         else:
-            srv = smtplib.SMTP(server_host, port)
+            srv = smtplib.SMTP(server_host, port, timeout=30)
             srv.starttls()
 
         srv.login(user, password)
@@ -76,6 +77,8 @@ def _send_email(to: str, subject: str, html_body: str) -> bool:
 
 def send_verification_email(to_email: str, first_name: str, token: str) -> bool:
     """Envía el correo de verificación con estilo Total Dark Premium."""
+    import html as _html
+    safe_name = _html.escape(first_name or "", quote=True)
     base_url = _resolve_app_url()
     verification_link = f"{base_url}/?token={token}"
 
@@ -89,7 +92,7 @@ def send_verification_email(to_email: str, first_name: str, token: str) -> bool:
         <div style="background-color: #1E293B; border-radius: 12px; padding: 30px; text-align: center; max-width: 500px; margin: 0 auto; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
             <h1 style="color: #2FF3E0; margin-bottom: 20px;">⚡ SuperAgente IA Pro</h1>
             <p style="color: #F8FAFC; font-size: 16px; line-height: 1.5; margin-bottom: 30px;">
-                Hola {first_name}, gracias por registrarte. Para activar tu cuenta Premium, haz clic en el botón de abajo.
+                Hola {safe_name}, gracias por registrarte. Para activar tu cuenta Premium, haz clic en el botón de abajo.
             </p>
             <a href="{verification_link}" style="background-color: #2FF3E0; color: #000000; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; margin-top: 20px;">
                 Activar Cuenta Premium
@@ -107,6 +110,8 @@ def send_verification_email(to_email: str, first_name: str, token: str) -> bool:
 
 def send_password_reset_email(to_email: str, first_name: str, token: str) -> bool:
     """Envía el correo de recuperación de contraseña."""
+    import html as _html
+    safe_name = _html.escape(first_name or "", quote=True)
     base_url = _resolve_app_url()
     reset_link = f"{base_url}/?reset_token={token}"
 
@@ -117,7 +122,7 @@ def send_password_reset_email(to_email: str, first_name: str, token: str) -> boo
         <div style="background-color: #1E293B; border-radius: 12px; padding: 30px; text-align: center; max-width: 500px; margin: 0 auto;">
             <h1 style="color: #2FF3E0; margin-bottom: 20px;">⚡ SuperAgente IA Pro</h1>
             <p style="color: #F8FAFC; font-size: 16px; line-height: 1.5; margin-bottom: 30px;">
-                Hola {first_name}, hemos recibido una solicitud para restablecer tu contraseña. Haz clic en el botón de abajo para crear una nueva.
+                Hola {safe_name}, hemos recibido una solicitud para restablecer tu contraseña. Haz clic en el botón de abajo para crear una nueva.
             </p>
             <a href="{reset_link}" style="background-color: #2FF3E0; color: #000000; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
                 Restablecer Contraseña
@@ -131,3 +136,15 @@ def send_password_reset_email(to_email: str, first_name: str, token: str) -> boo
     """
 
     return _send_email(to_email, "⚡ Recuperación de Contraseña", html_content)
+
+
+def send_email_async(to: str, subject: str, html_body: str) -> None:
+    """Fire-and-forget email sending in a background thread (non-blocking for UI)."""
+    def _worker():
+        try:
+            _send_email(to, subject, html_body)
+        except Exception as e:
+            logger.error("Async email failed to %s: %s", to, e)
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()

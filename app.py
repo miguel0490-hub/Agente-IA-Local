@@ -37,18 +37,15 @@ from src.database.database import (
     update_remember_token,
     clear_remember_token,
     verify_remember_token,
-    cleanup_expired_tokens,
     verify_user_token,
     update_password_with_token,
     get_user_profile,
     update_chat_title as update_chat_title_db,
-    init_db,
     is_user_admin,
 )
 from src.services.converter_service import run_conversion
 from src.services.memory_service import cargar_memoria, guardar_memoria, limpiar_memoria
 from src.core.config import CARPETA_IMAGENES, PROMPT_TECH_LEAD, PROMPT_APP_BUILDER, PROMPT_UI_DESIGNER, ESTILOS_CSS
-from src.core.session_state import initialize_session_state
 from src.core.auth_cookies import set_auth_cookie
 from src.core.intent_parser import parse_intent
 from src.core.ui_helpers import render_download_button
@@ -78,41 +75,13 @@ from src.services.provider_factory import (
     get_openai_tts_provider,
     get_edge_tts_provider,
 )
-# --- INICIALIZACIÓN DE DB Y GARBAGE COLLECTOR ---
+# --- INICIALIZACIÓN (DB + sesión + GC + directorios) ---
+from src.core.bootstrap import bootstrap_app
+bootstrap_app()
 
-
-@st.cache_resource(show_spinner=False)
-def start_database():
-    """Ejecuta la verificación de tablas de la DB solo 1 vez por ciclo de vida del servidor."""
-    init_db()
-    cleanup_expired_tokens()
-
-start_database()
-
-def run_garbage_collector():
-    """Elimina archivos temporales generados hace más de 24 horas."""
-    now = time.time()
-    for directory in [CARPETA_IMAGENES, "data/temp"]:
-        if os.path.exists(directory):
-            for filename in os.listdir(directory):
-                filepath = os.path.join(directory, filename)
-                if os.path.isfile(filepath) and os.stat(filepath).st_mtime < now - 86400:
-                    try:
-                        os.remove(filepath)
-                    except OSError as exc:
-                        _logger.warning("No se pudo eliminar temporal %s: %s", filepath, exc)
-
-if "gc_run" not in st.session_state:
-    run_garbage_collector()
-    st.session_state.gc_run = True
-
-# CookieManager en session_state para evitar CachedWidgetWarning en Streamlit moderno.
 if "cookie_manager" not in st.session_state:
     st.session_state.cookie_manager = stx.CookieManager(key="global_cookie_manager")
 cookie_manager = st.session_state.cookie_manager
-
-# --- INICIALIZACIÓN DE ESTADO ---
-initialize_session_state()
 
 # --- EXPIRACIÓN DE SESIÓN POR INACTIVIDAD ---
 if st.session_state.user_id:
@@ -131,9 +100,6 @@ if st.session_state.user_id:
 
 # --- ESTILOS ---
 st.markdown(ESTILOS_CSS, unsafe_allow_html=True)
-
-if not os.path.exists(CARPETA_IMAGENES):
-    os.makedirs(CARPETA_IMAGENES)
 
 # --- AUTO-LOGIN POR COOKIE (Remember Me) ---
 # Se ejecuta antes del bloque de login para restaurar la sesión sin interacción del usuario.

@@ -1,0 +1,27 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "superagente.fullname" . }}-app
+  namespace: {{ include "superagente.namespace" . }}
+  labels:
+    {{- include "superagente.componentLabels" (dict "ctx" . "component" "app") | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "superagente.componentSelectorLabels" (dict "ctx" . "component" "app") | nindent 6 }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "superagente.fullname" . }}-worker
+  namespace: {{ include "superagente.namespace" . }}
+  labels:
+    {{- include "superagente.componentLabels" (dict "ctx" . "component" "worker") | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "superagente.componentSelectorLabels" (dict "ctx" . "component" "worker") | nindent 6 }}
+{{- end }}

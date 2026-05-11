@@ -1,0 +1,50 @@
+{
+  "defaultAction": "SCMP_ACT_ERRNO",
+  "defaultErrnoRet": 1,
+  "archMap": [
+    { "architecture": "SCMP_ARCH_X86_64", "subArchitectures": ["SCMP_ARCH_X86", "SCMP_ARCH_X32"] },
+    { "architecture": "SCMP_ARCH_AARCH64", "subArchitectures": ["SCMP_ARCH_ARM"] }
+  ],
+  "syscalls": [
+    {
+      "names": [
+        "read", "write", "close", "fstat", "lseek", "mmap", "mprotect",
+        "munmap", "brk", "rt_sigaction", "rt_sigprocmask", "ioctl",
+        "access", "pipe", "select", "sched_yield", "mremap", "msync",
+        "mincore", "madvise", "dup", "dup2", "nanosleep", "getpid",
+        "sendfile", "socket", "connect", "accept", "sendto", "recvfrom",
+        "sendmsg", "recvmsg", "shutdown", "bind", "listen", "getsockname",
+        "getpeername", "setsockopt", "getsockopt", "clone", "fork",
+        "execve", "exit", "wait4", "kill", "uname", "fcntl", "flock",
+        "fsync", "fdatasync", "truncate", "ftruncate", "getdents",
+        "getcwd", "chdir", "rename", "mkdir", "rmdir", "unlink",
+        "readlink", "chmod", "fchmod", "chown", "fchown", "lchown",
+        "umask", "gettimeofday", "getrlimit", "getrusage", "times",
+        "getuid", "getgid", "geteuid", "getegid", "getppid", "getpgrp",
+        "setsid", "setpgid", "getgroups", "setgroups",
+        "sigaltstack", "stat", "lstat", "poll", "pread64", "pwrite64",
+        "readv", "writev", "rt_sigreturn", "futex", "set_tid_address",
+        "clock_gettime", "clock_getres", "clock_nanosleep",
+        "exit_group", "epoll_create", "epoll_ctl", "epoll_wait",
+        "set_robust_list", "get_robust_list",
+        "openat", "mkdirat", "newfstatat", "unlinkat", "renameat",
+        "readlinkat", "fchmodat", "fchownat", "faccessat",
+        "pselect6", "ppoll", "epoll_create1", "pipe2", "eventfd2",
+        "dup3", "accept4", "timerfd_create", "timerfd_settime",
+        "timerfd_gettime", "signalfd4", "epoll_pwait",
+        "getrandom", "memfd_create", "statx", "rseq",
+        "prlimit64", "arch_prctl", "sched_getaffinity",
+        "set_tid_address", "tgkill", "getdents64",
+        "prctl"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "names": ["clone"],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        { "index": 0, "value": 2114060288, "op": "SCMP_CMP_MASKED_EQ" }
+      ]
+    }
+  ]
+}

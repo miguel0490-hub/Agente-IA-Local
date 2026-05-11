@@ -48,7 +48,7 @@ class RAGService:
         self.conn.commit()
         return len(chunks)
 
-    def query(self, query: str, limit: int = 3) -> list:
+    def query(self, query: str, limit: int = 8) -> list:
         """Busca fragmentos relevantes usando BM25/MATCH con fallback a LIKE."""
         cursor = self.conn.cursor()
         clean_query = re.sub(r'[^\w\s]', ' ', query).strip()

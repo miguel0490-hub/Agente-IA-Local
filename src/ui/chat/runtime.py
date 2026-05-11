@@ -200,7 +200,7 @@ def handle_chat_interaction(
             provider = LLMFactory.get_provider(motor_name=motor, api_keys=st.session_state.api_keys)
             clean_res = ""
             file_paths = []
-            max_iteraciones = 2
+            max_iteraciones = 4
             iteracion = 0
 
             while iteracion < max_iteraciones:
@@ -306,7 +306,13 @@ def handle_chat_interaction(
                     st.session_state.messages.append({"role": "assistant", "content": clean_res_safe})
                     msg_sistema = (
                         f"RESULTADOS DE BÚSQUEDA PARA '{query}':\n{resultados_web}\n\n"
-                        "Por favor, usa esta información para generar la respuesta definitiva o el documento."
+                        "INSTRUCCIONES POST-BÚSQUEDA:\n"
+                        "1. Analiza TODAS las fuentes anteriores en profundidad.\n"
+                        "2. Si el usuario pidió un documento (PDF, informe, análisis), genera contenido "
+                        "EXTENSO, EXHAUSTIVO y PROFESIONAL con todas las secciones obligatorias del prompt de sistema.\n"
+                        "3. NO resumas en 2 párrafos. Desarrolla cada sección con datos concretos extraídos de las fuentes.\n"
+                        "4. Si es un PDF, el HTML debe tener mínimo 5-6 secciones h2 con contenido denso.\n"
+                        "5. Genera la respuesta definitiva ahora."
                     )
                     st.session_state.messages.append({"role": "user", "content": msg_sistema})
                     if "Gemini" in motor:

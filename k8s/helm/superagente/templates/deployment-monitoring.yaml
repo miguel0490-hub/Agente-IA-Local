@@ -1,0 +1,81 @@
+{{- if .Values.monitoring.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "superagente.fullname" . }}-monitoring
+  namespace: {{ include "superagente.namespace" . }}
+  labels:
+    {{- include "superagente.componentLabels" (dict "ctx" . "component" "monitoring") | nindent 4 }}
+spec:
+  replicas: {{ .Values.monitoring.replicaCount }}
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      {{- include "superagente.componentSelectorLabels" (dict "ctx" . "component" "monitoring") | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ .Values.monitoring.port | quote }}
+        prometheus.io/path: "/metrics"
+      labels:
+        {{- include "superagente.componentLabels" (dict "ctx" . "component" "monitoring") | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "superagente.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "superagente.podSecurityContext" . | nindent 8 }}
+      terminationGracePeriodSeconds: 30
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      {{- with .Values.monitoring.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.monitoring.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: monitoring
+          image: {{ include "superagente.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- include "superagente.containerSecurityContext" . | nindent 12 }}
+          command:
+            {{- toYaml .Values.monitoring.command | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.monitoring.port }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "superagente.fullname" . }}-config
+            - secretRef:
+                name: {{ include "superagente.fullname" . }}-secrets
+          livenessProbe:
+            {{- toYaml .Values.monitoring.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.monitoring.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.monitoring.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+{{- end }}

@@ -122,25 +122,75 @@ def get_connection():
 
 
 def get_cipher():
-    """Retorna un objeto Fernet inicializado con APP_SECRET_KEY."""
+    """Retorna un objeto Fernet inicializado con APP_SECRET_KEY.
+
+    Uses PBKDF2-HMAC-SHA256 with a fixed application salt when the key is not
+    already in native Fernet format.  This is resistant to rainbow-table attacks
+    compared to a plain SHA-256 derivation.
+    """
     from src.core.config import APP_SECRET_KEY
     if not APP_SECRET_KEY:
         raise ValueError("APP_SECRET_KEY no está configurada.")
     key_str = APP_SECRET_KEY.strip()
 
-    # Caso ideal: clave Fernet válida (urlsafe base64 de 32 bytes)
     try:
         return Fernet(key_str.encode("utf-8"))
     except Exception:
         pass
 
-    # Compatibilidad: si llega en otro formato, derivar una clave Fernet estable.
-    logger.warning("APP_SECRET_KEY no tiene formato Fernet válido. Se derivará una clave estable por compatibilidad.")
-    derived_key = base64.urlsafe_b64encode(hashlib.sha256(key_str.encode("utf-8")).digest())
-    return Fernet(derived_key)
+    logger.warning("APP_SECRET_KEY no tiene formato Fernet válido. Derivando con PBKDF2.")
+    _SALT = b"superagente-ia-pro-key-derivation-v1"
+    dk = hashlib.pbkdf2_hmac("sha256", key_str.encode("utf-8"), _SALT, iterations=480_000)
+    return Fernet(base64.urlsafe_b64encode(dk))
+
+
+def rotate_encryption_key(old_secret: str, new_secret: str) -> int:
+    """Re-encrypts all user API keys from old_secret to new_secret.
+
+    Returns the number of users whose keys were rotated.
+    """
+    def _make_fernet(secret: str) -> Fernet:
+        try:
+            return Fernet(secret.encode("utf-8"))
+        except Exception:
+            _SALT = b"superagente-ia-pro-key-derivation-v1"
+            dk = hashlib.pbkdf2_hmac("sha256", secret.encode("utf-8"), _SALT, iterations=480_000)
+            return Fernet(base64.urlsafe_b64encode(dk))
+
+    old_cipher = _make_fernet(old_secret)
+    new_cipher = _make_fernet(new_secret)
+    rotated = 0
+
+    with engine.begin() as conn:
+        rows = conn.execute(text("SELECT id, encrypted_api_keys FROM users")).fetchall()
+        for row in rows:
+            encrypted = row._mapping["encrypted_api_keys"]
+            if not encrypted:
+                continue
+            try:
+                plaintext = old_cipher.decrypt(encrypted.encode("utf-8"))
+                re_encrypted = new_cipher.encrypt(plaintext).decode("utf-8")
+                conn.execute(
+                    text("UPDATE users SET encrypted_api_keys = :enc WHERE id = :uid"),
+                    {"enc": re_encrypted, "uid": row._mapping["id"]},
+                )
+                rotated += 1
+            except Exception as e:
+                logger.error("Key rotation failed for user %s: %s", row._mapping["id"], e)
+
+    logger.info("Key rotation complete: %d users rotated.", rotated)
+    return rotated
 
 
 _ADMIN_BOOTSTRAP_USERNAME = "Miguel0490"
+
+_INDICES = [
+    ("idx_users_username", "users", "username"),
+    ("idx_users_email", "users", "email"),
+    ("idx_chats_user_id", "chats", "user_id"),
+    ("idx_messages_chat_id", "messages", "chat_id"),
+    ("idx_contact_user_id", "contact_messages", "user_id"),
+]
 
 
 def init_db():
@@ -175,6 +225,16 @@ def init_db():
                 text("UPDATE users SET is_admin = 1 WHERE username = :username AND is_admin = 0"),
                 {"username": _ADMIN_BOOTSTRAP_USERNAME},
             )
+
+        # Ensure indices exist for frequent queries
+        with engine.begin() as conn:
+            for idx_name, table_name, column_name in _INDICES:
+                try:
+                    conn.execute(text(
+                        f"CREATE INDEX IF NOT EXISTS {idx_name} ON {table_name} ({column_name})"
+                    ))
+                except Exception:
+                    pass  # Index may already exist or syntax differs between dialects
     except Exception as e:
         logger.error(f"Error inicializando/migrando base de datos: {e}")
         raise
@@ -371,7 +431,12 @@ def is_user_admin(user_id: int) -> bool:
     return bool(row and row._mapping["is_admin"])
 
 
-def get_all_users(search_query: str | None = None) -> list[dict]:
+def get_all_users(
+    search_query: str | None = None,
+    *,
+    page: int = 1,
+    page_size: int = 50,
+) -> list[dict]:
     sql = (
         "SELECT id, first_name, last_name, email, username, "
         "is_verified, is_admin, is_active, created_at FROM users"
@@ -385,9 +450,29 @@ def get_all_users(search_query: str | None = None) -> list[dict]:
         )
         params["q"] = like
     sql += " ORDER BY id DESC"
+    if page_size > 0:
+        offset = max(0, (page - 1) * page_size)
+        sql += f" LIMIT :lim OFFSET :off"
+        params["lim"] = page_size
+        params["off"] = offset
     with engine.connect() as conn:
         rows = conn.execute(text(sql), params).fetchall()
     return [dict(r._mapping) for r in rows]
+
+
+def get_user_count(search_query: str | None = None) -> int:
+    """Returns total user count (for pagination)."""
+    sql = "SELECT COUNT(*) FROM users"
+    params: dict = {}
+    if search_query:
+        like = f"%{search_query}%"
+        sql += (
+            " WHERE first_name LIKE :q OR last_name LIKE :q "
+            "OR email LIKE :q OR username LIKE :q"
+        )
+        params["q"] = like
+    with engine.connect() as conn:
+        return conn.execute(text(sql), params).scalar() or 0
 
 
 def get_user_stats() -> dict:

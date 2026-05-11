@@ -1,0 +1,79 @@
+groups:
+  - name: superagente-alerts
+    rules:
+      - alert: HighLLMErrorRate
+        expr: rate(superagente_llm_errors_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LLM error rate is elevated"
+          description: >-
+            LLM error rate has exceeded 0.1 req/s for 5 minutes.
+            Current value: {{ $value | printf "%.2f" }} req/s.
+
+      - alert: HighLLMLatency
+        expr: histogram_quantile(0.95, rate(superagente_llm_latency_seconds_bucket[5m])) > 30
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LLM p95 latency exceeds 30s"
+          description: >-
+            The 95th-percentile LLM response time is above 30 seconds.
+            Current p95: {{ $value | printf "%.1f" }}s.
+
+      - alert: CostSpike
+        expr: rate(superagente_llm_cost_usd_total[1h]) > 10
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "LLM cost spike detected"
+          description: >-
+            Hourly LLM spend rate exceeds $10/h.
+            Current rate: ${{ $value | printf "%.2f" }}/h.
+
+      - alert: PromptInjectionSurge
+        expr: rate(superagente_prompt_injection_total[5m]) > 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Prompt-injection surge detected"
+          description: >-
+            More than 1 prompt-injection attempt/s detected over 5 min.
+            Investigate immediately.
+
+      - alert: CircuitBreakerOpen
+        expr: superagente_circuit_breaker_state > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Circuit breaker is open for {{ $labels.service }}"
+          description: >-
+            Service {{ $labels.service }} circuit breaker has been open
+            for more than 1 minute.
+
+      - alert: HighActiveUsers
+        expr: superagente_active_users > 100
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: "High number of concurrent users"
+          description: >-
+            Active users exceeded 100 for 5 minutes.
+            Consider scaling. Current: {{ $value }}.
+
+      - alert: PodDown
+        expr: up{job="superagente"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "SuperAgente pod is down"
+          description: >-
+            Instance {{ $labels.instance }} has been unreachable
+            for more than 2 minutes.

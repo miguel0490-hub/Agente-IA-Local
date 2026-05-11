@@ -127,16 +127,21 @@ def render_onboarding_gate(update_api_keys_fn) -> None:
                 cm_model = st.text_input("ID del Modelo", placeholder="Ej: deepseek-chat", key="cm_model_input")
                 if st.form_submit_button("➕ Guardar este Modelo", use_container_width=True):
                     if cm_name and cm_url and cm_key and cm_model:
-                        st.session_state.temp_custom_models.append(
-                            {
-                                "name": cm_name.strip(),
-                                "base_url": cm_url.strip(),
-                                "api_key": cm_key.strip(),
-                                "model_id": cm_model.strip(),
-                            }
-                        )
-                        st.toast(f"✅ '{cm_name}' guardado. Añade otro o finaliza.", icon="⚙️")
-                        st.rerun()
+                        from src.security.url_validator import validate_url
+                        url_check = validate_url(cm_url.strip(), context="onboarding_custom_model")
+                        if not url_check.safe:
+                            st.error(f"⛔ URL bloqueada: {url_check.reason}")
+                        else:
+                            st.session_state.temp_custom_models.append(
+                                {
+                                    "name": cm_name.strip(),
+                                    "base_url": cm_url.strip(),
+                                    "api_key": cm_key.strip(),
+                                    "model_id": cm_model.strip(),
+                                }
+                            )
+                            st.toast(f"✅ '{cm_name}' guardado. Añade otro o finaliza.", icon="⚙️")
+                            st.rerun()
                     else:
                         st.warning("⚠️ Completa todos los campos antes de guardar el modelo.")
 

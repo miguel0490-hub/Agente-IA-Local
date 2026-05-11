@@ -25,6 +25,7 @@ def _polish_transcript_with_llm(raw_text: str, api_key: str) -> str:
             "Solo devuelve el texto corregido."
         )
         
+        estimated_tokens = max(256, len(raw_text) // 3 + 128)
         response = cliente.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
@@ -32,7 +33,7 @@ def _polish_transcript_with_llm(raw_text: str, api_key: str) -> str:
                 {"role": "user", "content": f"Puntúa este texto: {raw_text}"}
             ],
             temperature=0,
-            max_tokens=len(raw_text) + 100
+            max_tokens=estimated_tokens,
         )
         return response.choices[0].message.content.strip()
     except Exception:
@@ -89,8 +90,13 @@ def synthesize_speech_with_openai(
         if not api_key:
             return None, None, "❌ Funcionalidad omitida durante el onboarding por falta de clave (OpenAI TTS). Por favor, actualiza tu perfil."
 
-        if len(text) > 4096:
-            text = text[:4096]
+        _TTS_CHAR_LIMIT = 4096
+        if len(text) > _TTS_CHAR_LIMIT:
+            import logging
+            logging.getLogger(__name__).warning(
+                "TTS text truncated from %d to %d characters", len(text), _TTS_CHAR_LIMIT
+            )
+            text = text[:_TTS_CHAR_LIMIT]
 
         from openai import OpenAI
         cliente = OpenAI(api_key=api_key)

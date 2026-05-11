@@ -112,11 +112,15 @@ def generate_image_stability(
         if negative_prompt:
             form_data["negative_prompt"] = (None, negative_prompt)
 
-        response = requests.post(
+        from src.core.http_resilience import resilient_request
+        response = resilient_request(
+            "POST",
             _STABILITY_API_URL,
             headers=headers,
             files=form_data,
-            timeout=120
+            read_timeout=120,
+            max_retries=2,
+            circuit_breaker_key="stability_ai",
         )
 
         if response.status_code == 200:

@@ -65,3 +65,55 @@ jobs:
 
       - name: Dead code scan (min-confidence 90%)
         run: python -m vulture src app.py --min-confidence 90
+
+  security-sast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Bandit
+        run: pip install bandit
+
+      - name: Bandit SAST scan
+        run: bandit -r src -ll -ii --skip B101 -f json -o bandit-report.json || true
+
+      - name: Upload Bandit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-report
+          path: bandit-report.json
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Gitleaks secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+        continue-on-error: true
+
+  docker-security:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t superagente-scan:latest .
+
+      - name: Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: superagente-scan:latest
+          format: table
+          exit-code: 0
+          severity: HIGH,CRITICAL
