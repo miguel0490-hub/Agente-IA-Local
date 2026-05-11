@@ -148,6 +148,9 @@ def init_db():
     metadata.create_all(engine)
     try:
         inspector = inspect(engine)
+        existing_tables = set(inspector.get_table_names())
+        if "contact_messages" not in existing_tables:
+            contact_messages_table.create(engine)
         user_cols = {c["name"] for c in inspector.get_columns("users")}
         with engine.begin() as conn:
             if "reset_token" not in user_cols:
