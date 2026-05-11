@@ -542,6 +542,25 @@ ESTILOS_CSS = f"""
         border-radius: 10px !important;
     }}
 
+    /* ── Dropdowns / Selectbox en Dialogs ────────────────────── */
+    div[data-testid="stDialog"] [data-baseweb="select"] li,
+    div[data-testid="stDialog"] [data-baseweb="menu"] li,
+    div[data-testid="stDialog"] [data-baseweb="popover"] li,
+    [data-baseweb="popover"] li {{
+        color: #F8FAFC !important;
+        -webkit-text-fill-color: #F8FAFC !important;
+    }}
+    [data-baseweb="popover"] ul {{
+        background-color: #1E293B !important;
+    }}
+    [data-baseweb="popover"] li:hover,
+    [data-baseweb="menu"] li:hover {{
+        background-color: rgba(0, 242, 254, 0.15) !important;
+    }}
+    [data-baseweb="popover"] li[aria-selected="true"] {{
+        background-color: rgba(0, 242, 254, 0.25) !important;
+    }}
+
     /* ── Fixes Estructurales ─────────────────────────────────── */
     .block-container {{ padding-bottom: 130px !important; }}
     div[data-testid="stDialog"] {{ z-index: 99999 !important; }}
