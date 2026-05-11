@@ -499,8 +499,30 @@ ESTILOS_CSS = f"""
     div[data-testid="stTabs"] {{ background-color: #1E293B !important; border-radius: 12px !important; padding: 1.5rem !important; box-shadow: 0 4px 15px rgba(0,0,0,0.3) !important; }}
     div[data-testid="stTabs"] button[aria-selected="false"] p {{ color: #94A3B8 !important; }}
     div[data-testid="stDialog"] div[role="dialog"] {{ background-color: #111827 !important; border: 1px solid #1E293B; }}
-    div[data-testid="stDialog"] label p, div[data-testid="stDialog"] label span {{ color: #F8FAFC !important; font-weight: 600 !important; }}
-    div[data-testid="stDialog"] .stMarkdown p, div[data-testid="stDialog"] .stMarkdown span {{ color: #CBD5E0 !important; }}
+    div[data-testid="stDialog"] label p,
+    div[data-testid="stDialog"] label span,
+    div[data-testid="stDialog"] [data-testid="stForm"] label p,
+    div[data-testid="stDialog"] [data-testid="stForm"] label span {{
+        color: #FFFFFF !important;
+        -webkit-text-fill-color: #FFFFFF !important;
+        font-weight: 600 !important;
+    }}
+    div[data-testid="stDialog"] .stMarkdown p,
+    div[data-testid="stDialog"] .stMarkdown span,
+    div[data-testid="stDialog"] [data-testid="stForm"] .stMarkdown p,
+    div[data-testid="stDialog"] [data-testid="stForm"] .stMarkdown span {{
+        color: #E2E8F0 !important;
+        -webkit-text-fill-color: #E2E8F0 !important;
+    }}
+    div[data-testid="stDialog"] p,
+    div[data-testid="stDialog"] span,
+    div[data-testid="stDialog"] div {{
+        -webkit-text-fill-color: inherit;
+    }}
+    div[data-testid="stDialog"] [data-baseweb="select"] span {{
+        color: #F8FAFC !important;
+        -webkit-text-fill-color: #F8FAFC !important;
+    }}
     div[data-testid="stCheckbox"] label p, div[data-testid="stCheckbox"] label span {{ color: #FFFFFF !important; font-weight: 500 !important; font-size: 14px !important; }}
     div[data-testid="stExpanderDetails"] {{ background-color: rgba(30, 41, 59, 0.5) !important; border-radius: 10px; padding: 15px; border: 1px solid rgba(0, 225, 217, 0.2); }}
     .stExpander details summary p {{ color: #F8FAFC !important; }}
