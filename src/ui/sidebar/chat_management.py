@@ -5,8 +5,8 @@ from __future__ import annotations
 import streamlit as st
 
 
-def render_chat_management(create_chat_fn, get_user_chats_fn, cargar_memoria_fn, panel_ajustes_fn) -> None:
-    """Renders chat list/create/select and settings trigger inside sidebar."""
+def render_chat_management(create_chat_fn, get_user_chats_fn, cargar_memoria_fn) -> None:
+    """Renders chat list/create/select inside sidebar."""
     st.header("💬 Mis Chats")
 
     if st.button("➕ Nuevo Chat", use_container_width=True):
@@ -45,12 +45,4 @@ def render_chat_management(create_chat_fn, get_user_chats_fn, cargar_memoria_fn,
             st.session_state.messages = []
             st.rerun()
 
-    st.divider()
-    if st.button("⚙️ Centro de Control", key="btn_settings", use_container_width=True):
-        st.session_state.show_settings = True
-        st.rerun()
-
-    if st.session_state.show_settings:
-        st.session_state.show_settings = False
-        panel_ajustes_fn()
     st.divider()

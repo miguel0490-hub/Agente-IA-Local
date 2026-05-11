@@ -204,30 +204,16 @@ with st.sidebar:
         get_user_profile_fn=get_user_profile,
         cookie_manager=cookie_manager,
         clear_remember_token_fn=clear_remember_token,
+        is_admin=is_user_admin(st.session_state.user_id),
+        panel_admin_fn=panel_admin,
+        panel_contacto_fn=panel_contacto,
+        panel_ajustes_fn=panel_ajustes,
     )
-
-    if is_user_admin(st.session_state.user_id):
-        if st.button("🛡️ Panel de Administración", key="btn_admin", use_container_width=True):
-            st.session_state.show_admin = True
-            st.rerun()
-        if st.session_state.get("show_admin"):
-            st.session_state.show_admin = False
-            panel_admin()
-        st.divider()
-
-    if st.button("📩 Contactar al Administrador", key="btn_contact", use_container_width=True):
-        st.session_state.show_contact = True
-        st.rerun()
-    if st.session_state.get("show_contact"):
-        st.session_state.show_contact = False
-        panel_contacto()
-    st.divider()
 
     render_chat_management(
         create_chat_fn=create_chat,
         get_user_chats_fn=get_user_chats,
         cargar_memoria_fn=cargar_memoria,
-        panel_ajustes_fn=panel_ajustes,
     )
 
 
