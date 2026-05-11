@@ -2,10 +2,22 @@
 
 from __future__ import annotations
 
-import streamlit as st
+import os
+import re
 
-from src.database.database import create_contact_message, get_admin_emails, get_user_profile
+import streamlit as st
+from dotenv import load_dotenv
+
+from src.database.database import create_contact_message, get_user_profile
 from src.services.email_service import _send_email
+
+load_dotenv()
+
+ADMIN_NOTIFICATION_EMAIL = os.getenv("ADMIN_NOTIFICATION_EMAIL", "").strip()
+if not ADMIN_NOTIFICATION_EMAIL:
+    _from = os.getenv("SMTP_FROM", "")
+    _match = re.search(r"<(.+?)>", _from)
+    ADMIN_NOTIFICATION_EMAIL = _match.group(1) if _match else _from.strip()
 
 
 def render_contact_form() -> None:
@@ -51,9 +63,9 @@ def _notify_admins(user_id: int, subject: str, message: str) -> None:
     full_name = f"{profile.get('first_name', '')} {profile.get('last_name', '')}".strip()
     user_email = profile.get("email", "")
 
-    admin_emails = get_admin_emails()
-    if not admin_emails:
+    if not ADMIN_NOTIFICATION_EMAIL:
         return
+    admin_emails = [ADMIN_NOTIFICATION_EMAIL]
 
     html = f"""
     <html>

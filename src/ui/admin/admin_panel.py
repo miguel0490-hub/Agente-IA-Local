@@ -217,6 +217,15 @@ def _render_contact_messages() -> None:
     for msg in messages:
         mid = msg["id"]
         created = msg.get("created_at")
+        if created and isinstance(created, str):
+            from datetime import datetime as _dt
+            try:
+                created = _dt.strptime(created, "%Y-%m-%d %H:%M:%S.%f")
+            except ValueError:
+                try:
+                    created = _dt.strptime(created, "%Y-%m-%d %H:%M:%S")
+                except ValueError:
+                    created = None
         date_str = created.strftime("%d/%m/%Y %H:%M") if created else "N/A"
         status_label = _STATUS_LABELS.get(msg["status"], msg["status"])
 
