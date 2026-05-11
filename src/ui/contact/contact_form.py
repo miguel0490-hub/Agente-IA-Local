@@ -11,7 +11,7 @@ from src.services.email_service import _send_email
 def render_contact_form() -> None:
     """Renderiza el formulario de contacto dentro de un st.dialog."""
     st.markdown(
-        '<p style="color:#CBD5E1;font-size:0.9rem;margin-bottom:1rem;">'
+        '<p style="color:#FFFFFF !important;-webkit-text-fill-color:#FFFFFF !important;font-size:0.95rem;margin-bottom:1rem;">'
         "Envía un mensaje al equipo de administración. "
         "Te responderemos lo antes posible.</p>",
         unsafe_allow_html=True,
