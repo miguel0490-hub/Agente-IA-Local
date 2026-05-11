@@ -41,7 +41,10 @@ def _render_dashboard() -> None:
 
     st.metric("Registros últimos 7 días", stats["recent_7d"])
 
-    st.subheader("Últimos usuarios registrados")
+    st.markdown(
+        '<p style="color:#00F2FE;font-size:1.15rem;font-weight:700;margin:1rem 0 0.5rem;">Últimos usuarios registrados</p>',
+        unsafe_allow_html=True,
+    )
     users = get_all_users()
     recent = users[:5]
     if recent:
@@ -50,8 +53,10 @@ def _render_dashboard() -> None:
             date_str = created.strftime("%d/%m/%Y %H:%M") if created else "N/A"
             verified_icon = "✅" if u["is_verified"] else "❌"
             st.markdown(
-                f"**@{u['username']}** — {u['first_name']} {u['last_name']} — "
-                f"{verified_icon} — {date_str}"
+                f'<p style="color:#F8FAFC;font-size:0.95rem;margin:4px 0;">'
+                f'<strong>@{u["username"]}</strong> — {u["first_name"]} {u["last_name"]} — '
+                f'{verified_icon} — <span style="color:#94A3B8;">{date_str}</span></p>',
+                unsafe_allow_html=True,
             )
     else:
         st.info("No hay usuarios registrados.")

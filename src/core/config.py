@@ -508,6 +508,40 @@ ESTILOS_CSS = f"""
     div[data-testid="stExpanderDetails"] p, div[data-testid="stExpanderDetails"] span,
     div[data-testid="stExpanderDetails"] li, div[data-testid="stExpanderDetails"] strong {{ color: #E2E8F0 !important; font-size: 14px !important; }}
 
+    /* ── Métricas y Captions en Dialogs ──────────────────────── */
+    div[data-testid="stDialog"] [data-testid="stMetricValue"] {{
+        color: #00F2FE !important;
+        font-size: 2rem !important;
+        font-weight: 800 !important;
+        -webkit-text-fill-color: #00F2FE !important;
+    }}
+    div[data-testid="stDialog"] [data-testid="stMetricLabel"] {{
+        color: #F8FAFC !important;
+        font-weight: 600 !important;
+        -webkit-text-fill-color: #F8FAFC !important;
+    }}
+    div[data-testid="stDialog"] [data-testid="stMetricDelta"] {{
+        color: #4FACFE !important;
+    }}
+    div[data-testid="stDialog"] [data-testid="stCaptionContainer"] p {{
+        color: #94A3B8 !important;
+        -webkit-text-fill-color: #94A3B8 !important;
+        font-size: 13px !important;
+    }}
+    div[data-testid="stDialog"] .stMarkdown h1,
+    div[data-testid="stDialog"] .stMarkdown h2,
+    div[data-testid="stDialog"] .stMarkdown h3,
+    div[data-testid="stDialog"] [data-testid="stSubheader"],
+    div[data-testid="stDialog"] [data-testid="stSubheaderContainer"] {{
+        color: #00F2FE !important;
+        -webkit-text-fill-color: #00F2FE !important;
+    }}
+    div[data-testid="stDialog"] [data-testid="stContainer"] {{
+        background-color: rgba(30, 41, 59, 0.5) !important;
+        border: 1px solid rgba(0, 225, 217, 0.15) !important;
+        border-radius: 10px !important;
+    }}
+
     /* ── Fixes Estructurales ─────────────────────────────────── */
     .block-container {{ padding-bottom: 130px !important; }}
     div[data-testid="stDialog"] {{ z-index: 99999 !important; }}
