@@ -542,6 +542,20 @@ ESTILOS_CSS = f"""
         border-radius: 10px !important;
     }}
 
+    /* ── TextArea / TextInput en Dialogs ─────────────────────── */
+    div[data-testid="stDialog"] textarea,
+    div[data-testid="stDialog"] input[type="text"],
+    div[data-testid="stDialog"] input[type="password"] {{
+        color: #F8FAFC !important;
+        -webkit-text-fill-color: #F8FAFC !important;
+        background-color: #0F172A !important;
+    }}
+    div[data-testid="stDialog"] textarea::placeholder,
+    div[data-testid="stDialog"] input::placeholder {{
+        color: #64748B !important;
+        -webkit-text-fill-color: #64748B !important;
+    }}
+
     /* ── Dropdowns / Selectbox en Dialogs ────────────────────── */
     div[data-testid="stDialog"] [data-baseweb="select"] li,
     div[data-testid="stDialog"] [data-baseweb="menu"] li,
