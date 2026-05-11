@@ -2,6 +2,7 @@ import smtplib
 import os
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from typing import Optional, Tuple
 from dotenv import load_dotenv
 from src.core.logger import get_logger
 
@@ -25,17 +26,56 @@ def _resolve_app_url() -> str:
         return f"http://localhost:{runtime_port}"
     return "http://localhost:8501"
 
-def send_verification_email(to_email: str, first_name: str, token: str) -> bool:
-    """Envía el correo de verificación con estilo Total Dark Premium."""
-    smtp_server = os.getenv("SMTP_SERVER")
-    smtp_port = os.getenv("SMTP_PORT")
-    smtp_user = os.getenv("SMTP_USER")
-    smtp_password = os.getenv("SMTP_PASSWORD")
 
-    if not all([smtp_server, smtp_port, smtp_user, smtp_password]):
-        logger.error("Faltan credenciales SMTP en el archivo .env. No se pudo enviar el correo de verificación.")
+def _get_smtp_config() -> Optional[Tuple[str, str, str, str, str]]:
+    """Devuelve (server, port, user, password, from) o None si faltan credenciales."""
+    server = os.getenv("SMTP_SERVER")
+    port = os.getenv("SMTP_PORT")
+    user = os.getenv("SMTP_USER")
+    password = os.getenv("SMTP_PASSWORD")
+
+    if not all([server, port, user, password]):
+        logger.error("Faltan credenciales SMTP en el archivo .env.")
+        return None
+
+    # SMTP_FROM permite un remitente distinto al usuario de autenticación.
+    smtp_from = (os.getenv("SMTP_FROM") or "").strip() or user
+    return server, port, user, password, smtp_from
+
+
+def _send_email(to: str, subject: str, html_body: str) -> bool:
+    """Construye el mensaje MIME y lo envía vía SMTP."""
+    cfg = _get_smtp_config()
+    if cfg is None:
         return False
 
+    server_host, port_str, user, password, smtp_from = cfg
+
+    msg = MIMEMultipart()
+    msg["From"] = smtp_from
+    msg["To"] = to
+    msg["Subject"] = subject
+    msg.attach(MIMEText(html_body, "html"))
+
+    try:
+        port = int(port_str)
+        if port == 465:
+            srv = smtplib.SMTP_SSL(server_host, port)
+        else:
+            srv = smtplib.SMTP(server_host, port)
+            srv.starttls()
+
+        srv.login(user, password)
+        srv.send_message(msg)
+        srv.quit()
+        return True
+    except Exception as e:
+        logger.error(f"Error al enviar correo a {to}: {e}")
+        return False
+
+
+def send_verification_email(to_email: str, first_name: str, token: str) -> bool:
+    """Envía el correo de verificación con estilo Total Dark Premium."""
     base_url = _resolve_app_url()
     verification_link = f"{base_url}/?token={token}"
 
@@ -62,39 +102,11 @@ def send_verification_email(to_email: str, first_name: str, token: str) -> bool:
     </html>
     """
 
-    msg = MIMEMultipart()
-    msg['From'] = smtp_user
-    msg['To'] = to_email
-    msg['Subject'] = "⚡ Activa tu cuenta en SuperAgente IA Pro"
-    msg.attach(MIMEText(html_content, 'html'))
+    return _send_email(to_email, "⚡ Activa tu cuenta en SuperAgente IA Pro", html_content)
 
-    try:
-        # Usa starttls si el puerto es distinto de 465, de lo contrario SSL
-        port = int(smtp_port)
-        if port == 465:
-            server = smtplib.SMTP_SSL(smtp_server, port)
-        else:
-            server = smtplib.SMTP(smtp_server, port)
-            server.starttls()
-            
-        server.login(smtp_user, smtp_password)
-        server.send_message(msg)
-        server.quit()
-        return True
-    except Exception as e:
-        logger.error(f"Error al enviar correo: {e}")
-        return False
 
 def send_password_reset_email(to_email: str, first_name: str, token: str) -> bool:
-    smtp_server = os.getenv("SMTP_SERVER")
-    smtp_port = os.getenv("SMTP_PORT")
-    smtp_user = os.getenv("SMTP_USER")
-    smtp_password = os.getenv("SMTP_PASSWORD")
-
-    if not all([smtp_server, smtp_port, smtp_user, smtp_password]):
-        logger.error("Faltan credenciales SMTP en el archivo .env.")
-        return False
-
+    """Envía el correo de recuperación de contraseña."""
     base_url = _resolve_app_url()
     reset_link = f"{base_url}/?reset_token={token}"
 
@@ -118,24 +130,4 @@ def send_password_reset_email(to_email: str, first_name: str, token: str) -> boo
     </html>
     """
 
-    msg = MIMEMultipart()
-    msg['From'] = smtp_user
-    msg['To'] = to_email
-    msg['Subject'] = "⚡ Recuperación de Contraseña"
-    msg.attach(MIMEText(html_content, 'html'))
-
-    try:
-        port = int(smtp_port)
-        if port == 465:
-            server = smtplib.SMTP_SSL(smtp_server, port)
-        else:
-            server = smtplib.SMTP(smtp_server, port)
-            server.starttls()
-            
-        server.login(smtp_user, smtp_password)
-        server.send_message(msg)
-        server.quit()
-        return True
-    except Exception as e:
-        logger.error(f"Error al enviar correo de reseteo: {e}")
-        return False
+    return _send_email(to_email, "⚡ Recuperación de Contraseña", html_content)
