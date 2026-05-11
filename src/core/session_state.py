@@ -21,6 +21,7 @@ def initialize_session_state() -> None:
         "auto_close_sidebar": False,
         "temp_custom_models": [],
         "show_settings": False,
+        "show_contact": False,
         "form_clear_counter": 0,
         "security_events": [],
         "last_activity_ts": time.time(),

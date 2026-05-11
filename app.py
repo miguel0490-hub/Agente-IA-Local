@@ -64,6 +64,7 @@ from src.ui.auth.query_params_gate import handle_auth_query_params
 from src.ui.onboarding.onboarding_gate import render_onboarding_gate
 from src.ui.settings.control_center import render_control_center_dialog
 from src.ui.admin.admin_panel import render_admin_panel
+from src.ui.contact.contact_form import render_contact_form
 from src.ui.multimedia.converter_dialog import render_converter_dialog
 from src.ui.multimedia.sidebar_tools import render_multimedia_sidebar_tools
 from src.ui.components.chat_messages import render_chat_messages
@@ -192,6 +193,11 @@ def panel_admin():
     render_admin_panel()
 
 
+@st.dialog("📩 Contactar al Administrador")
+def panel_contacto():
+    render_contact_form()
+
+
 # --- CONFIGURACIÓN DE CHATS EN SIDEBAR ---
 with st.sidebar:
     render_sidebar_profile(
@@ -208,6 +214,14 @@ with st.sidebar:
             st.session_state.show_admin = False
             panel_admin()
         st.divider()
+
+    if st.button("📩 Contactar al Administrador", key="btn_contact", use_container_width=True):
+        st.session_state.show_contact = True
+        st.rerun()
+    if st.session_state.get("show_contact"):
+        st.session_state.show_contact = False
+        panel_contacto()
+    st.divider()
 
     render_chat_management(
         create_chat_fn=create_chat,

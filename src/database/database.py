@@ -93,6 +93,18 @@ messages_table = Table(
     Column("extra_data", Text),
 )
 
+contact_messages_table = Table(
+    "contact_messages",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+    Column("subject", String(255), nullable=False),
+    Column("message", Text, nullable=False),
+    Column("status", String(50), nullable=False, server_default=text("'pending'")),
+    Column("admin_reply", Text),
+    Column("created_at", DateTime, server_default=func.now()),
+)
+
 
 def _is_postgres() -> bool:
     return engine.dialect.name.startswith("postgresql")
@@ -443,6 +455,82 @@ def admin_reset_password(user_id: int, new_password: str) -> tuple[bool, str]:
         if result.rowcount == 0:
             return False, "Usuario no encontrado."
     return True, "Contraseña reseteada con éxito."
+
+
+# --- Contacto usuario → admin ---
+
+def create_contact_message(user_id: int, subject: str, message: str) -> int:
+    with engine.begin() as conn:
+        if _is_postgres():
+            msg_id = conn.execute(
+                text(
+                    "INSERT INTO contact_messages (user_id, subject, message, created_at) "
+                    "VALUES (:uid, :subj, :msg, :now) RETURNING id"
+                ),
+                {"uid": user_id, "subj": subject, "msg": message, "now": datetime.now()},
+            ).scalar_one()
+        else:
+            conn.execute(
+                text(
+                    "INSERT INTO contact_messages (user_id, subject, message, created_at) "
+                    "VALUES (:uid, :subj, :msg, :now)"
+                ),
+                {"uid": user_id, "subj": subject, "msg": message, "now": datetime.now()},
+            )
+            msg_id = conn.execute(
+                text("SELECT id FROM contact_messages ORDER BY id DESC LIMIT 1")
+            ).scalar_one()
+    return msg_id
+
+
+def get_contact_messages(status_filter: str | None = None) -> list[dict]:
+    sql = (
+        "SELECT cm.id, cm.user_id, cm.subject, cm.message, cm.status, "
+        "cm.admin_reply, cm.created_at, u.username, u.first_name, u.last_name, u.email "
+        "FROM contact_messages cm JOIN users u ON cm.user_id = u.id"
+    )
+    params: dict = {}
+    if status_filter:
+        sql += " WHERE cm.status = :st"
+        params["st"] = status_filter
+    sql += " ORDER BY cm.created_at DESC"
+    with engine.connect() as conn:
+        rows = conn.execute(text(sql), params).fetchall()
+    return [dict(r._mapping) for r in rows]
+
+
+def get_contact_stats() -> dict:
+    with engine.connect() as conn:
+        total = conn.execute(text("SELECT COUNT(*) FROM contact_messages")).scalar() or 0
+        pending = conn.execute(text("SELECT COUNT(*) FROM contact_messages WHERE status = 'pending'")).scalar() or 0
+        resolved = conn.execute(text("SELECT COUNT(*) FROM contact_messages WHERE status = 'resolved'")).scalar() or 0
+    return {"total": total, "pending": pending, "resolved": resolved}
+
+
+def update_contact_status(msg_id: int, status: str, admin_reply: str | None = None) -> None:
+    with engine.begin() as conn:
+        if admin_reply is not None:
+            conn.execute(
+                text("UPDATE contact_messages SET status = :st, admin_reply = :reply WHERE id = :mid"),
+                {"st": status, "reply": admin_reply, "mid": msg_id},
+            )
+        else:
+            conn.execute(
+                text("UPDATE contact_messages SET status = :st WHERE id = :mid"),
+                {"st": status, "mid": msg_id},
+            )
+
+
+def delete_contact_message(msg_id: int) -> None:
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM contact_messages WHERE id = :mid"), {"mid": msg_id})
+
+
+def get_admin_emails() -> list[str]:
+    """Devuelve los emails de todos los administradores."""
+    with engine.connect() as conn:
+        rows = conn.execute(text("SELECT email FROM users WHERE is_admin = 1")).fetchall()
+    return [r._mapping["email"] for r in rows]
 
 
 # --- Chats y Mensajes ---
