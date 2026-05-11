@@ -1,4 +1,4 @@
-# Dependencias opcionales (no usadas en CI por defecto).
-# Instalación: pip install -r requirements-dev.txt && playwright install chromium
-pytest-playwright>=0.4.0
-playwright>=1.40.0
+pytest
+pytest-cov
+playwright
+pytest-playwright

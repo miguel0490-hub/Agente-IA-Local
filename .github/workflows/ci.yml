@@ -23,11 +23,17 @@ jobs:
         run: git rev-parse HEAD && git log -1 --oneline
 
       - name: Install dependencies
-        run: pip install --upgrade pip && pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
 
       # Ramas antiguas sin Markdown en requirements fallan antes de pytest con mensaje claro.
       - name: Comprobar dependencias mínimas declaradas
         run: grep -qE '^Markdown>=' requirements.txt || (echo "::error::requirements.txt debe incluir Markdown>=... (fusiona origin/master)" && exit 1)
+
+      - name: Install Playwright Browsers
+        run: python -m playwright install --with-deps chromium
 
       # Refuerzo CI: no importar e2e aunque falte norecursedirs/importorskip en una rama vieja.
       - name: Tests (coverage según pytest.ini)
