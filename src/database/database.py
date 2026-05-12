@@ -91,6 +91,7 @@ messages_table = Table(
     Column("role", String(50), nullable=False),
     Column("content", Text),
     Column("extra_data", Text),
+    Column("created_at", DateTime, server_default=func.now()),
 )
 
 contact_messages_table = Table(
@@ -102,6 +103,18 @@ contact_messages_table = Table(
     Column("message", Text, nullable=False),
     Column("status", String(50), nullable=False, server_default=text("'pending'")),
     Column("admin_reply", Text),
+    Column("created_at", DateTime, server_default=func.now()),
+)
+
+usage_log_table = Table(
+    "usage_log",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+    Column("model", String(255), nullable=False),
+    Column("tokens_in", Integer, nullable=False, server_default=text("0")),
+    Column("tokens_out", Integer, nullable=False, server_default=text("0")),
+    Column("estimated_cost", String(20), nullable=False, server_default=text("'0'")),
     Column("created_at", DateTime, server_default=func.now()),
 )
 
@@ -190,6 +203,7 @@ _INDICES = [
     ("idx_chats_user_id", "chats", "user_id"),
     ("idx_messages_chat_id", "messages", "chat_id"),
     ("idx_contact_user_id", "contact_messages", "user_id"),
+    ("idx_usage_user_id", "usage_log", "user_id"),
 ]
 
 
@@ -219,6 +233,10 @@ def init_db():
                 conn.execute(text("ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1"))
             if "created_at" not in user_cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN created_at TIMESTAMP"))
+
+            msg_cols = {c["name"] for c in inspector.get_columns("messages")}
+            if "created_at" not in msg_cols:
+                conn.execute(text("ALTER TABLE messages ADD COLUMN created_at TIMESTAMP"))
 
             # Auto-promote bootstrap admin
             conn.execute(
@@ -669,13 +687,15 @@ def get_user_chats(user_id):
 def get_chat_messages(chat_id):
     with engine.connect() as conn:
         rows = conn.execute(
-            text("SELECT role, content, extra_data FROM messages WHERE chat_id = :chat_id ORDER BY id ASC"),
+            text("SELECT role, content, extra_data, created_at FROM messages WHERE chat_id = :chat_id ORDER BY id ASC"),
             {"chat_id": chat_id},
         ).fetchall()
 
     messages = []
     for row in rows:
         msg = {"role": row._mapping["role"], "content": row._mapping["content"]}
+        if row._mapping.get("created_at"):
+            msg["created_at"] = str(row._mapping["created_at"])
         if row._mapping["extra_data"]:
             try:
                 msg.update(json.loads(row._mapping["extra_data"]))
@@ -687,18 +707,23 @@ def get_chat_messages(chat_id):
 
 def save_chat_messages(chat_id, messages):
     with engine.begin() as conn:
-        conn.execute(text("DELETE FROM messages WHERE chat_id = :chat_id"), {"chat_id": chat_id})
-        for msg in messages:
+        existing_count = conn.execute(
+            text("SELECT COUNT(*) FROM messages WHERE chat_id = :chat_id"),
+            {"chat_id": chat_id},
+        ).scalar() or 0
+
+        new_messages = messages[existing_count:]
+        for msg in new_messages:
             role = msg.get("role", "unknown")
             content = msg.get("content", "")
-            extra_data = {k: v for k, v in msg.items() if k not in ("role", "content")}
+            extra_data = {k: v for k, v in msg.items() if k not in ("role", "content", "created_at")}
             extra_json = json.dumps(extra_data) if extra_data else None
             conn.execute(
                 text(
-                    "INSERT INTO messages (chat_id, role, content, extra_data) "
-                    "VALUES (:chat_id, :role, :content, :extra_data)"
+                    "INSERT INTO messages (chat_id, role, content, extra_data, created_at) "
+                    "VALUES (:chat_id, :role, :content, :extra_data, :created_at)"
                 ),
-                {"chat_id": chat_id, "role": role, "content": content, "extra_data": extra_json},
+                {"chat_id": chat_id, "role": role, "content": content, "extra_data": extra_json, "created_at": datetime.now()},
             )
         conn.execute(
             text("UPDATE chats SET updated_at = :updated_at WHERE id = :chat_id"),
@@ -740,6 +765,57 @@ def verify_remember_token(token: str) -> int | None:
             {"token": token, "now": datetime.now()},
         ).fetchone()
     return row._mapping["id"] if row else None
+
+
+def search_chat_messages(user_id: int, query: str) -> list[dict]:
+    """Searches messages across all chats for a user. Returns matching chats with snippet."""
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT DISTINCT c.id, c.title, m.content "
+                "FROM messages m JOIN chats c ON m.chat_id = c.id "
+                "WHERE c.user_id = :uid AND m.content LIKE :q "
+                "ORDER BY c.updated_at DESC LIMIT 20"
+            ),
+            {"uid": user_id, "q": f"%{query}%"},
+        ).fetchall()
+    return [{"chat_id": r._mapping["id"], "title": r._mapping["title"], "snippet": (r._mapping["content"] or "")[:100]} for r in rows]
+
+
+def persist_usage_entry(user_id: int, model: str, tokens_in: int, tokens_out: int, estimated_cost: float) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO usage_log (user_id, model, tokens_in, tokens_out, estimated_cost, created_at) "
+                "VALUES (:uid, :model, :tin, :tout, :cost, :now)"
+            ),
+            {"uid": user_id, "model": model, "tin": tokens_in, "tout": tokens_out, "cost": str(round(estimated_cost, 6)), "now": datetime.now()},
+        )
+
+
+def get_user_usage_summary(user_id: int) -> dict:
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT model, COUNT(*) as cnt, SUM(tokens_in) as tin, SUM(tokens_out) as tout, "
+                "SUM(CAST(estimated_cost AS REAL)) as cost FROM usage_log WHERE user_id = :uid GROUP BY model"
+            ),
+            {"uid": user_id},
+        ).fetchall()
+    by_model = {}
+    total_cost = 0.0
+    total_requests = 0
+    for r in rows:
+        m = r._mapping
+        by_model[m["model"]] = {
+            "requests": m["cnt"],
+            "tokens_in": m["tin"] or 0,
+            "tokens_out": m["tout"] or 0,
+            "cost": round(float(m["cost"] or 0), 4),
+        }
+        total_cost += float(m["cost"] or 0)
+        total_requests += m["cnt"]
+    return {"total_requests": total_requests, "total_estimated_cost": round(total_cost, 4), "by_model": by_model}
 
 
 def generate_password_reset_token(email):

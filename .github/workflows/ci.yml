@@ -35,9 +35,17 @@ jobs:
       - name: Install Playwright Browsers
         run: python -m playwright install --with-deps chromium
 
-      # Refuerzo CI: no importar e2e aunque falte norecursedirs/importorskip en una rama vieja.
-      - name: Tests (coverage según pytest.ini)
-        run: python -m pytest --ignore=tests/e2e
+      - name: Unit tests (coverage)
+        run: python -m pytest --ignore=tests/e2e --ignore=tests/load
+
+      - name: Integration tests
+        run: python -m pytest tests/integration/ -v -o "addopts=" --tb=short
+
+      - name: Chaos tests
+        run: python -m pytest tests/chaos/ -v -o "addopts=" --tb=short
+
+      - name: Performance tests
+        run: python -m pytest tests/performance/ -v -o "addopts=" --tb=short
 
   dependency-audit:
     runs-on: ubuntu-latest

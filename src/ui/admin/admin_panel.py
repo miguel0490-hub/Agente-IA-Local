@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+from src.core.i18n import t
 from src.core.sanitizer import escape_user_data as _esc
 from src.database.database import (
     admin_delete_user,
@@ -23,7 +24,7 @@ from src.database.database import (
 def render_admin_panel() -> None:
     """Renderiza el panel de administración completo dentro de un st.dialog."""
     tab_dash, tab_users, tab_msgs = st.tabs(
-        ["📊 Dashboard", "👥 Gestión de Usuarios", "📩 Mensajes de Contacto"]
+        [t("admin_tab_dashboard"), t("admin_tab_users"), t("admin_tab_messages")]
     )
 
     with tab_dash:
@@ -44,15 +45,15 @@ def _render_dashboard() -> None:
     stats = get_user_stats()
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total Usuarios", stats["total"])
-    c2.metric("Verificados", stats["verified"])
-    c3.metric("Activos", stats["active"])
-    c4.metric("Admins", stats["admins"])
+    c1.metric(t("admin_total_users"), stats["total"])
+    c2.metric(t("admin_verified"), stats["verified"])
+    c3.metric(t("admin_active"), stats["active"])
+    c4.metric(t("admin_admins"), stats["admins"])
 
-    st.metric("Registros últimos 7 días", stats["recent_7d"])
+    st.metric(t("admin_recent_7d"), stats["recent_7d"])
 
     st.markdown(
-        '<p style="color:#00F2FE;font-size:1.15rem;font-weight:700;margin:1rem 0 0.5rem;">Últimos usuarios registrados</p>',
+        f'<p style="color:#00F2FE;font-size:1.15rem;font-weight:700;margin:1rem 0 0.5rem;">{t("admin_recent_users")}</p>',
         unsafe_allow_html=True,
     )
     users = get_all_users()
@@ -69,7 +70,7 @@ def _render_dashboard() -> None:
                 unsafe_allow_html=True,
             )
     else:
-        st.info("No hay usuarios registrados.")
+        st.info(t("admin_no_users"))
 
 
 # ---------------------------------------------------------------------------
@@ -77,11 +78,11 @@ def _render_dashboard() -> None:
 # ---------------------------------------------------------------------------
 
 def _render_user_management() -> None:
-    search = st.text_input("🔍 Buscar usuario", placeholder="Nombre, email o username...")
+    search = st.text_input(t("admin_search_user"), placeholder=t("admin_search_placeholder"))
     users = get_all_users(search_query=search if search else None)
 
     if not users:
-        st.info("No se encontraron usuarios.")
+        st.info(t("admin_no_users_found"))
         return
 
     current_user_id = st.session_state.get("user_id")
@@ -100,15 +101,15 @@ def _render_user_management() -> None:
             with col_info:
                 badges = []
                 if user["is_admin"]:
-                    badges.append("🛡️ Admin")
+                    badges.append(t("admin_badge_admin"))
                 if user["is_verified"]:
-                    badges.append("✅ Verificado")
+                    badges.append(t("admin_badge_verified"))
                 else:
-                    badges.append("⏳ Pendiente")
+                    badges.append(t("admin_badge_pending"))
                 if user["is_active"]:
-                    badges.append("🟢 Activo")
+                    badges.append(t("admin_badge_active"))
                 else:
-                    badges.append("🔴 Suspendido")
+                    badges.append(t("admin_badge_suspended"))
 
                 st.markdown(f"**@{username}** — {full_name}")
                 st.caption(f"{user['email']} · {date_str} · {' · '.join(badges)}")
@@ -124,36 +125,36 @@ def _render_action_buttons(user: dict, is_self: bool) -> None:
 
     with b1:
         if user["is_active"]:
-            if st.button("⏸ Suspender", key=f"deact_{uid}", disabled=is_self, use_container_width=True):
+            if st.button(t("admin_suspend"), key=f"deact_{uid}", disabled=is_self, use_container_width=True):
                 toggle_user_active(uid, False)
                 st.rerun()
         else:
-            if st.button("▶ Activar", key=f"act_{uid}", use_container_width=True):
+            if st.button(t("admin_activate"), key=f"act_{uid}", use_container_width=True):
                 toggle_user_active(uid, True)
                 st.rerun()
 
         if not user["is_verified"]:
-            if st.button("✅ Verificar", key=f"verify_{uid}", use_container_width=True):
+            if st.button(t("admin_verify"), key=f"verify_{uid}", use_container_width=True):
                 force_verify_user(uid)
                 st.rerun()
 
     with b2:
         if user["is_admin"]:
-            if st.button("⬇ Quitar Admin", key=f"demote_{uid}", disabled=is_self, use_container_width=True):
+            if st.button(t("admin_demote"), key=f"demote_{uid}", disabled=is_self, use_container_width=True):
                 set_user_admin(uid, False)
                 st.rerun()
         else:
-            if st.button("⬆ Hacer Admin", key=f"promote_{uid}", use_container_width=True):
+            if st.button(t("admin_promote"), key=f"promote_{uid}", use_container_width=True):
                 set_user_admin(uid, True)
                 st.rerun()
 
-        if st.button("🗑 Eliminar", key=f"del_{uid}", disabled=is_self, use_container_width=True):
+        if st.button(t("admin_delete_user"), key=f"del_{uid}", disabled=is_self, use_container_width=True):
             st.session_state[f"confirm_del_{uid}"] = True
 
     # Reset password expandable
-    with st.expander("🔑 Resetear contraseña", expanded=False):
-        new_pw = st.text_input("Nueva contraseña", type="password", key=f"pw_{uid}")
-        if st.button("Aplicar", key=f"pw_btn_{uid}", use_container_width=True):
+    with st.expander(t("admin_reset_password"), expanded=False):
+        new_pw = st.text_input(t("admin_new_password"), type="password", key=f"pw_{uid}")
+        if st.button(t("admin_apply"), key=f"pw_btn_{uid}", use_container_width=True):
             if new_pw and len(new_pw) >= 4:
                 ok, msg = admin_reset_password(uid, new_pw)
                 if ok:
@@ -161,19 +162,19 @@ def _render_action_buttons(user: dict, is_self: bool) -> None:
                 else:
                     st.error(msg)
             else:
-                st.warning("Mínimo 4 caracteres.")
+                st.warning(t("admin_min_chars"))
 
     # Delete confirmation
     if st.session_state.get(f"confirm_del_{uid}"):
-        st.warning(f"¿Eliminar a @{user['username']}? Se borrarán todos sus datos.")
+        st.warning(t("admin_confirm_delete").replace("{username}", user['username']))
         cc1, cc2 = st.columns(2)
         with cc1:
-            if st.button("Confirmar", key=f"cdel_{uid}", type="primary", use_container_width=True):
+            if st.button(t("admin_confirm"), key=f"cdel_{uid}", type="primary", use_container_width=True):
                 admin_delete_user(uid)
                 st.session_state.pop(f"confirm_del_{uid}", None)
                 st.rerun()
         with cc2:
-            if st.button("Cancelar", key=f"cancel_del_{uid}", use_container_width=True):
+            if st.button(t("admin_cancel"), key=f"cancel_del_{uid}", use_container_width=True):
                 st.session_state.pop(f"confirm_del_{uid}", None)
                 st.rerun()
 
@@ -182,28 +183,31 @@ def _render_action_buttons(user: dict, is_self: bool) -> None:
 # Mensajes de Contacto
 # ---------------------------------------------------------------------------
 
-_STATUS_LABELS = {
-    "pending": "⏳ Pendiente",
-    "in_progress": "🔄 En curso",
-    "resolved": "✅ Resuelto",
-}
+_STATUS_OPTIONS = ["pending", "in_progress", "resolved"]
 
-_STATUS_OPTIONS = list(_STATUS_LABELS.keys())
+
+def _status_labels() -> dict[str, str]:
+    return {
+        "pending": t("admin_status_pending"),
+        "in_progress": t("admin_status_in_progress"),
+        "resolved": t("admin_status_resolved"),
+    }
 
 
 def _render_contact_messages() -> None:
     stats = get_contact_stats()
     c1, c2, c3 = st.columns(3)
-    c1.metric("Total Mensajes", stats["total"])
-    c2.metric("Pendientes", stats["pending"])
-    c3.metric("Resueltos", stats["resolved"])
+    c1.metric(t("admin_total_messages"), stats["total"])
+    c2.metric(t("admin_pending_messages"), stats["pending"])
+    c3.metric(t("admin_resolved_messages"), stats["resolved"])
 
     filter_col, _ = st.columns([1, 2])
     with filter_col:
+        labels = _status_labels()
         status_filter = st.selectbox(
-            "Filtrar por estado",
+            t("admin_filter_status"),
             options=["all"] + _STATUS_OPTIONS,
-            format_func=lambda x: "Todos" if x == "all" else _STATUS_LABELS[x],
+            format_func=lambda x, _l=labels: t("admin_filter_all") if x == "all" else _l[x],
             key="contact_filter",
         )
 
@@ -212,7 +216,7 @@ def _render_contact_messages() -> None:
     )
 
     if not messages:
-        st.info("No hay mensajes de contacto.")
+        st.info(t("admin_no_messages"))
         return
 
     for msg in messages:
@@ -228,7 +232,7 @@ def _render_contact_messages() -> None:
                 except ValueError:
                     created = None
         date_str = created.strftime("%d/%m/%Y %H:%M") if created else "N/A"
-        status_label = _STATUS_LABELS.get(msg["status"], msg["status"])
+        status_label = _status_labels().get(msg["status"], msg["status"])
 
         with st.container(border=True):
             st.markdown(
@@ -254,7 +258,7 @@ def _render_contact_messages() -> None:
                 st.markdown(
                     f'<div style="background:#1A3A2A;border-radius:8px;padding:12px;'
                     f'color:#A7F3D0;font-size:0.9rem;line-height:1.5;margin-bottom:8px;">'
-                    f'<strong>Respuesta del admin:</strong><br>{_esc(msg["admin_reply"])}</div>',
+                    f'<strong>{t("admin_reply_label")}</strong><br>{_esc(msg["admin_reply"])}</div>',
                     unsafe_allow_html=True,
                 )
 
@@ -262,36 +266,37 @@ def _render_contact_messages() -> None:
 
             with col_status:
                 current_idx = _STATUS_OPTIONS.index(msg["status"]) if msg["status"] in _STATUS_OPTIONS else 0
+                msg_labels = _status_labels()
                 new_status = st.selectbox(
-                    "Estado",
+                    t("admin_status_label"),
                     options=_STATUS_OPTIONS,
-                    format_func=lambda x: _STATUS_LABELS[x],
+                    format_func=lambda x, _l=msg_labels: _l[x],
                     index=current_idx,
                     key=f"msg_status_{mid}",
                 )
                 if new_status != msg["status"]:
-                    if st.button("Actualizar", key=f"update_st_{mid}", use_container_width=True):
+                    if st.button(t("admin_update"), key=f"update_st_{mid}", use_container_width=True):
                         update_contact_status(mid, new_status)
                         st.rerun()
 
             with col_reply:
-                reply = st.text_input("Respuesta", key=f"reply_{mid}", placeholder="Escribe una respuesta...")
-                if st.button("Responder", key=f"reply_btn_{mid}", use_container_width=True):
+                reply = st.text_input(t("admin_reply_input"), key=f"reply_{mid}", placeholder=t("admin_reply_placeholder"))
+                if st.button(t("admin_reply_button"), key=f"reply_btn_{mid}", use_container_width=True):
                     if reply and reply.strip():
                         update_contact_status(mid, "resolved", admin_reply=reply.strip())
                         st.rerun()
                     else:
-                        st.warning("Escribe una respuesta.")
+                        st.warning(t("admin_reply_empty"))
 
             with col_delete:
-                if st.button("🗑 Eliminar", key=f"del_msg_{mid}", use_container_width=True):
+                if st.button(t("admin_delete_user"), key=f"del_msg_{mid}", use_container_width=True):
                     st.session_state[f"confirm_del_msg_{mid}"] = True
 
                 if st.session_state.get(f"confirm_del_msg_{mid}"):
-                    if st.button("Confirmar", key=f"cdel_msg_{mid}", type="primary", use_container_width=True):
+                    if st.button(t("admin_confirm"), key=f"cdel_msg_{mid}", type="primary", use_container_width=True):
                         delete_contact_message(mid)
                         st.session_state.pop(f"confirm_del_msg_{mid}", None)
                         st.rerun()
-                    if st.button("Cancelar", key=f"cancel_del_msg_{mid}", use_container_width=True):
+                    if st.button(t("admin_cancel"), key=f"cancel_del_msg_{mid}", use_container_width=True):
                         st.session_state.pop(f"confirm_del_msg_{mid}", None)
                         st.rerun()

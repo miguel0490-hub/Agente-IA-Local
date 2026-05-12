@@ -43,12 +43,18 @@ class TestGeminiProvider:
         assert path is None
         assert "omitida" in error
 
-    @patch("src.services.llm_provider.ggenai")
-    def test_stream_chat_yields_text(self, mock_ggenai):
+    @patch("src.services.llm_provider._lazy_types")
+    @patch("src.services.llm_provider._lazy_ggenai")
+    def test_stream_chat_yields_text(self, mock_lazy_ggenai, mock_lazy_types):
         from src.services.llm_provider import GeminiProvider
+        mock_ggenai = MagicMock()
+        mock_lazy_ggenai.return_value = mock_ggenai
+        mock_lazy_types.return_value = MagicMock()
+
         mock_chat = MagicMock()
         mock_frag = MagicMock()
         mock_frag.text = "respuesta de prueba"
+        mock_frag.candidates = []
         mock_chat.send_message_stream.return_value = [mock_frag]
         mock_ggenai.Client.return_value.chats.create.return_value = mock_chat
 
@@ -56,9 +62,14 @@ class TestGeminiProvider:
         chunks = list(provider.stream_chat(["Hola"], []))
         assert "respuesta de prueba" in "".join(chunks)
 
-    @patch("src.services.llm_provider.ggenai")
-    def test_generar_imagen_success(self, mock_ggenai):
+    @patch("src.services.llm_provider._lazy_types")
+    @patch("src.services.llm_provider._lazy_ggenai")
+    def test_generar_imagen_success(self, mock_lazy_ggenai, mock_lazy_types):
         from src.services.llm_provider import GeminiProvider
+        mock_ggenai = MagicMock()
+        mock_lazy_ggenai.return_value = mock_ggenai
+        mock_lazy_types.return_value = MagicMock()
+
         mock_image = MagicMock()
         mock_image.image.image_bytes = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
         mock_result = MagicMock()
@@ -81,8 +92,8 @@ class TestGroqProvider:
         chunks = list(provider.stream_chat("Hola", []))
         assert any("omitida" in c for c in chunks)
 
-    @patch("src.services.llm_provider.Groq")
-    def test_stream_chat_with_continuation(self, mock_groq_cls):
+    @patch("src.services.llm_provider._lazy_groq")
+    def test_stream_chat_with_continuation(self, mock_lazy_groq):
         from src.services.llm_provider import GroqProvider
 
         choice1 = MagicMock()
@@ -99,7 +110,7 @@ class TestGroqProvider:
 
         mock_client = MagicMock()
         mock_client.chat.completions.create.side_effect = [[chunk1], [chunk2]]
-        mock_groq_cls.return_value = mock_client
+        mock_lazy_groq.return_value.return_value = mock_client
 
         provider = GroqProvider(api_key="test-key")
         chunks = list(provider.stream_chat("Hola", []))
@@ -107,8 +118,8 @@ class TestGroqProvider:
         assert "parte1" in full
         assert "parte2" in full
 
-    @patch("src.services.llm_provider.Groq")
-    def test_fallback_model_on_failure(self, mock_groq_cls):
+    @patch("src.services.llm_provider._lazy_groq")
+    def test_fallback_model_on_failure(self, mock_lazy_groq):
         from src.services.llm_provider import GroqProvider
 
         choice = MagicMock()
@@ -125,7 +136,7 @@ class TestGroqProvider:
                 raise Exception("model_decommissioned")
             return [chunk]
         mock_client.chat.completions.create.side_effect = create_side_effect
-        mock_groq_cls.return_value = mock_client
+        mock_lazy_groq.return_value.return_value = mock_client
 
         provider = GroqProvider(api_key="test-key")
         chunks = list(provider.stream_chat("Hola", []))
@@ -140,8 +151,8 @@ class TestOpenRouterProvider:
         chunks = list(provider.stream_chat("Hola", []))
         assert any("omitida" in c for c in chunks)
 
-    @patch("src.services.llm_provider.OpenAI")
-    def test_stream_chat_success(self, mock_openai_cls):
+    @patch("src.services.llm_provider._lazy_openai")
+    def test_stream_chat_success(self, mock_lazy_openai):
         from src.services.llm_provider import OpenRouterProvider
 
         choice = MagicMock()
@@ -149,7 +160,7 @@ class TestOpenRouterProvider:
         choice.finish_reason = "stop"
         chunk = MagicMock()
         chunk.choices = [choice]
-        mock_openai_cls.return_value.chat.completions.create.return_value = [chunk]
+        mock_lazy_openai.return_value.return_value.chat.completions.create.return_value = [chunk]
 
         provider = OpenRouterProvider(api_key="test-key")
         chunks = list(provider.stream_chat("Hola", []))
@@ -157,9 +168,9 @@ class TestOpenRouterProvider:
 
 
 class TestCustomOpenAIProvider:
-    @patch("src.services.llm_provider.OpenAI")
+    @patch("src.services.llm_provider._lazy_openai")
     @patch("src.security.url_validator.validate_url")
-    def test_stream_chat_success(self, mock_validate, mock_openai_cls):
+    def test_stream_chat_success(self, mock_validate, mock_lazy_openai):
         from src.services.llm_provider import CustomOpenAIProvider
         from src.security.url_validator import URLValidationResult
         mock_validate.return_value = URLValidationResult(safe=True)
@@ -168,7 +179,7 @@ class TestCustomOpenAIProvider:
         choice.delta.content = "custom OK"
         chunk = MagicMock()
         chunk.choices = [choice]
-        mock_openai_cls.return_value.chat.completions.create.return_value = [chunk]
+        mock_lazy_openai.return_value.return_value.chat.completions.create.return_value = [chunk]
 
         provider = CustomOpenAIProvider(
             base_url="https://api.example.com/v1",
@@ -191,13 +202,13 @@ class TestCustomOpenAIProvider:
                 model_name="m"
             )
 
-    @patch("src.services.llm_provider.OpenAI")
+    @patch("src.services.llm_provider._lazy_openai")
     @patch("src.security.url_validator.validate_url")
-    def test_402_insufficient_balance(self, mock_validate, mock_openai_cls):
+    def test_402_insufficient_balance(self, mock_validate, mock_lazy_openai):
         from src.services.llm_provider import CustomOpenAIProvider
         from src.security.url_validator import URLValidationResult
         mock_validate.return_value = URLValidationResult(safe=True)
-        mock_openai_cls.return_value.chat.completions.create.side_effect = Exception("402 Insufficient Balance")
+        mock_lazy_openai.return_value.return_value.chat.completions.create.side_effect = Exception("402 Insufficient Balance")
 
         provider = CustomOpenAIProvider(base_url="https://api.example.com/v1", api_key="k", model_name="m")
         chunks = list(provider.stream_chat("Hola", []))
@@ -206,12 +217,12 @@ class TestCustomOpenAIProvider:
 
 class TestOllamaProvider:
     @patch("src.security.url_validator.validate_url")
-    @patch("src.services.llm_provider.OpenAI")
-    def test_stream_chat_error_yields_message(self, mock_openai_cls, mock_validate):
+    @patch("src.services.llm_provider._lazy_openai")
+    def test_stream_chat_error_yields_message(self, mock_lazy_openai, mock_validate):
         from src.services.llm_provider import OllamaProvider
         from src.security.url_validator import URLValidationResult
         mock_validate.return_value = URLValidationResult(safe=True)
-        mock_openai_cls.return_value.chat.completions.create.side_effect = ConnectionError("refused")
+        mock_lazy_openai.return_value.return_value.chat.completions.create.side_effect = ConnectionError("refused")
 
         provider = OllamaProvider(base_url="https://localhost:11434/v1")
         chunks = list(provider.stream_chat("Hola", []))
@@ -363,12 +374,14 @@ class TestAudioServices:
         assert p2.voice == "nova"
 
     @patch("groq.Groq")
-    def test_whisper_transcription(self, mock_groq):
+    def test_whisper_transcription(self, mock_groq_cls):
         from src.services.audio_service import transcribe_audio_with_groq
-        mock_groq.return_value.audio.transcriptions.create.return_value = "Texto transcrito"
+        mock_client = MagicMock()
+        mock_client.audio.transcriptions.create.return_value = "Texto transcrito"
         mock_choice = MagicMock()
         mock_choice.message.content = "Texto transcrito."
-        mock_groq.return_value.chat.completions.create.return_value.choices = [mock_choice]
+        mock_client.chat.completions.create.return_value.choices = [mock_choice]
+        mock_groq_cls.return_value = mock_client
         text, error = transcribe_audio_with_groq(b"\x00" * 100, "k", "test.mp3")
         assert error is None
         assert "Texto transcrito" in text

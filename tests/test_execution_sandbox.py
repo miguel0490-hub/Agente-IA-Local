@@ -1,5 +1,6 @@
 from src.services.execution_sandbox import CodeSecurityError, validate_code_security
 from src.services import execution_sandbox
+from unittest.mock import MagicMock
 
 
 def test_validate_code_security_blocks_os_import():
@@ -26,45 +27,53 @@ def test_validate_code_security_allows_math():
 
 
 def test_run_python_in_docker_without_docker(monkeypatch):
-    monkeypatch.setattr(execution_sandbox.shutil, "which", lambda _: None)
+    monkeypatch.setattr(
+        execution_sandbox.subprocess,
+        "Popen",
+        MagicMock(side_effect=FileNotFoundError("docker not found")),
+    )
     res = execution_sandbox.run_python_in_docker("print('x')")
     assert res.ok is False
     assert "Docker" in res.error
 
 
 def test_run_python_in_docker_container_error(monkeypatch):
-    class Proc:
-        returncode = 1
-        stdout = ""
-        stderr = "boom"
-
-    monkeypatch.setattr(execution_sandbox.shutil, "which", lambda _: "docker")
-    monkeypatch.setattr(execution_sandbox.subprocess, "run", lambda *a, **k: Proc())
+    mock_proc = MagicMock()
+    mock_proc.returncode = 1
+    mock_proc.communicate.return_value = ("", "boom")
+    mock_proc.pid = 99999
+    monkeypatch.setattr(
+        execution_sandbox.subprocess, "Popen", MagicMock(return_value=mock_proc)
+    )
     res = execution_sandbox.run_python_in_docker("print('x')")
     assert res.ok is False
     assert "boom" in res.error
 
 
 def test_run_python_in_docker_timeout(monkeypatch):
-    monkeypatch.setattr(execution_sandbox.shutil, "which", lambda _: "docker")
-
-    def _raise_timeout(*args, **kwargs):
-        raise execution_sandbox.subprocess.TimeoutExpired(cmd="docker", timeout=1)
-
-    monkeypatch.setattr(execution_sandbox.subprocess, "run", _raise_timeout)
+    mock_proc = MagicMock()
+    mock_proc.pid = 99999
+    mock_proc.kill.return_value = None
+    mock_proc.communicate.side_effect = [
+        execution_sandbox.subprocess.TimeoutExpired(cmd="docker", timeout=1),
+        ("", ""),
+    ]
+    monkeypatch.setattr(
+        execution_sandbox.subprocess, "Popen", MagicMock(return_value=mock_proc)
+    )
     res = execution_sandbox.run_python_in_docker("print('x')")
     assert res.ok is False
     assert "Timeout" in res.error
 
 
 def test_run_python_in_docker_invalid_json(monkeypatch):
-    class Proc:
-        returncode = 0
-        stdout = "not-json"
-        stderr = ""
-
-    monkeypatch.setattr(execution_sandbox.shutil, "which", lambda _: "docker")
-    monkeypatch.setattr(execution_sandbox.subprocess, "run", lambda *a, **k: Proc())
+    mock_proc = MagicMock()
+    mock_proc.returncode = 0
+    mock_proc.communicate.return_value = ("not-json", "")
+    mock_proc.pid = 99999
+    monkeypatch.setattr(
+        execution_sandbox.subprocess, "Popen", MagicMock(return_value=mock_proc)
+    )
     res = execution_sandbox.run_python_in_docker("print('x')")
     assert res.ok is False
     assert "Respuesta inválida" in res.error

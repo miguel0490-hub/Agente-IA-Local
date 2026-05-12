@@ -39,11 +39,29 @@ def run_garbage_collector() -> None:
                         logger.warning("No se pudo eliminar temporal %s: %s", filepath, exc)
 
 
+@st.cache_resource(show_spinner=False)
+def _start_background_services() -> None:
+    """Initializes background monitoring services once per server lifecycle."""
+    try:
+        from src.agents.health_monitor import AgentHealthMonitor
+        AgentHealthMonitor.get_instance()
+    except Exception as e:
+        logger.warning("Failed to start AgentHealthMonitor: %s", e)
+
+    try:
+        from src.security.execution_timeout_guard import ExecutionTimeoutGuard
+        ExecutionTimeoutGuard.get_instance()
+    except Exception as e:
+        logger.warning("Failed to start ExecutionTimeoutGuard: %s", e)
+
+
 def bootstrap_app() -> None:
     """Runs all one-time initialization: DB, session state, GC, output dirs."""
     start_database()
 
     initialize_session_state()
+
+    _start_background_services()
 
     if "gc_run" not in st.session_state:
         run_garbage_collector()

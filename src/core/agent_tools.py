@@ -27,7 +27,7 @@ class ToolValidator:
     ALLOWED_ACTIONS = {"create_file", "edit_file", "search_web", "open_converter", "query_rag", "execute_code"}
 
     @staticmethod
-    def authorize(tool_data: dict) -> Optional[dict]:
+    def authorize(tool_data: dict, role_name: str = "") -> Optional[dict]:
         try:
             validated = ToolCallModel(**tool_data)
             if validated.action not in ToolValidator.ALLOWED_ACTIONS:
@@ -38,6 +38,11 @@ class ToolValidator:
             if not decision.allowed:
                 logger.warning(f"[SECURITY] Acción bloqueada por política: {validated.action} ({decision.reason})")
                 return None
+            if role_name:
+                from src.agents.registry import is_tool_allowed_for_role
+                if not is_tool_allowed_for_role(role_name, validated.action):
+                    logger.info(f"[AGENT] Tool '{validated.action}' not in capabilities for role '{role_name}'")
+                    return None
             if decision.requires_confirmation:
                 as_dict["requires_confirmation"] = True
             return as_dict
@@ -138,7 +143,15 @@ def _parse_tool_payload(raw_block: str) -> Optional[dict]:
     return payload
 
 
-def parse_tool_calls(text: str) -> tuple[str, list]:
+def _sanitize_tool_strings(tool: dict) -> None:
+    """Strips trailing \\n, whitespace and literal backslash-n from string fields."""
+    for key in ("query", "filename", "suggested_format"):
+        val = tool.get(key)
+        if isinstance(val, str):
+            tool[key] = val.strip().replace("\\n", "").replace("\n", "")
+
+
+def parse_tool_calls(text: str, role_name: str = "") -> tuple[str, list]:
     """Extrae llamadas a herramientas usando JSON estricto."""
     tools_to_run = []
     clean_text = text
@@ -165,8 +178,9 @@ def parse_tool_calls(text: str) -> tuple[str, list]:
             clean_text = clean_text.replace(match.group(0), str(data.get("message")))
             continue
 
-        authorized_tool = ToolValidator.authorize(data)
+        authorized_tool = ToolValidator.authorize(data, role_name=role_name)
         if authorized_tool:
+            _sanitize_tool_strings(authorized_tool)
             tools_to_run.append(authorized_tool)
             action = authorized_tool.get("action")
             if action == "search_web":
@@ -175,7 +189,6 @@ def parse_tool_calls(text: str) -> tuple[str, list]:
                 aviso = f"\n> 🛠️ **Herramienta Ejecutada:** `{action}`\n"
             clean_text = clean_text.replace(match.group(0), aviso)
 
-    # Fallback para JSON crudo fuera de markdown fences.
     for raw_obj in _extract_balanced_json_objects(text_without_fences):
         candidate = raw_obj.strip()
         if PromptInjectionDetector.detect(candidate):
@@ -186,9 +199,10 @@ def parse_tool_calls(text: str) -> tuple[str, list]:
         if data.get("action") == "respond" and data.get("message"):
             clean_text = clean_text.replace(raw_obj, str(data.get("message")))
             continue
-        authorized_tool = ToolValidator.authorize(data)
+        authorized_tool = ToolValidator.authorize(data, role_name=role_name)
         if not authorized_tool:
             continue
+        _sanitize_tool_strings(authorized_tool)
         tools_to_run.append(authorized_tool)
         action = authorized_tool.get("action")
         if action == "search_web":

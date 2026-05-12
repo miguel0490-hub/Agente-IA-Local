@@ -3,25 +3,71 @@
 from __future__ import annotations
 
 import os
+import re
+
 import streamlit as st
+
+from src.core.i18n import t
 from src.core.sanitizer import sanitize_markdown_text
+
+_TOOL_ACTIONS = r"(?:create_file|edit_file|execute_code|query_rag|open_converter|search_web)"
+
+_JSON_TOOL_BLOCK = re.compile(
+    r"```json\s*\{[^}]*\"action\"\s*:\s*\"" + _TOOL_ACTIONS + r"\"[\s\S]*?```",
+    re.DOTALL,
+)
+_RAW_JSON_TOOL = re.compile(
+    r"\{\s*\"action\"\s*:\s*\"" + _TOOL_ACTIONS + r"\"[^}]*\}",
+    re.DOTALL,
+)
+
+
+def _clean_tool_json_from_display(text: str) -> str:
+    """Strips raw tool-call JSON blocks from text so users never see them."""
+    text = _JSON_TOOL_BLOCK.sub("", text)
+    text = _RAW_JSON_TOOL.sub("", text)
+    return text.strip()
+
+
+_SKIP_PREFIXES = (
+    "RESULTADOS DE BÚSQUEDA PARA",
+    "RESULTADOS DEL CEREBRO RAG",
+    "RESULTADO DE LA EJECUCIÓN",
+    "INSTRUCCIONES POST-BÚSQUEDA",
+)
+
+
+def _is_internal_message(content: str) -> bool:
+    """Returns True for system-internal messages that shouldn't be shown to the user."""
+    return any(content.startswith(p) for p in _SKIP_PREFIXES)
 
 
 def render_chat_messages(messages: list, render_download_button_fn) -> None:
     """Renders full chat thread, including images, audio, and file downloads."""
-    for msg in messages:
+    for idx, msg in enumerate(messages):
         if msg.get("role") == "system":
+            continue
+        content = msg.get("content", "")
+        if _is_internal_message(content):
             continue
         avatar = "🧑‍💻" if msg["role"] == "user" else "🤖"
         with st.chat_message(msg["role"], avatar=avatar):
-            if msg.get("content"):
-                st.markdown(sanitize_markdown_text(msg["content"]))
+            display_content = content
+            if msg["role"] == "assistant":
+                display_content = _clean_tool_json_from_display(content)
+
+            if display_content:
+                st.markdown(sanitize_markdown_text(display_content))
+
+            if msg.get("created_at"):
+                st.caption(f"🕐 {msg['created_at'][:16].replace('T', ' ')}")
+
             if msg.get("image_path") and os.path.exists(msg.get("image_path")):
                 filepath = msg["image_path"]
                 from PIL import Image
 
                 img = Image.open(filepath)
-                st.image(img, caption="Obra generada", use_container_width=True)
+                st.image(img, caption=t("chat_image_caption"), use_container_width=True)
                 render_download_button_fn(filepath)
             if msg.get("audio_path") and os.path.exists(msg.get("audio_path")):
                 st.audio(msg.get("audio_path"))

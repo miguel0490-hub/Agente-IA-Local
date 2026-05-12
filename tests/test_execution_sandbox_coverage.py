@@ -1,4 +1,5 @@
 from src.services import execution_sandbox
+from unittest.mock import MagicMock
 
 
 def test_validate_code_security_blocks_attribute_access():
@@ -11,26 +12,26 @@ def test_validate_code_security_blocks_attribute_access():
 
 
 def test_run_python_in_docker_success_payload(monkeypatch):
-    class Proc:
-        returncode = 0
-        stdout = '{"stdout":"ok","stderr":"","error":""}\n'
-        stderr = ""
-
-    monkeypatch.setattr(execution_sandbox.shutil, "which", lambda _: "docker")
-    monkeypatch.setattr(execution_sandbox.subprocess, "run", lambda *a, **k: Proc())
+    mock_proc = MagicMock()
+    mock_proc.returncode = 0
+    mock_proc.communicate.return_value = ('{"stdout":"ok","stderr":"","error":""}\n', "")
+    mock_proc.pid = 99999
+    monkeypatch.setattr(
+        execution_sandbox.subprocess, "Popen", MagicMock(return_value=mock_proc)
+    )
     res = execution_sandbox.run_python_in_docker("print('ok')")
     assert res.ok is True
     assert res.stdout == "ok"
 
 
 def test_run_python_in_docker_payload_with_error(monkeypatch):
-    class Proc:
-        returncode = 0
-        stdout = '{"stdout":"","stderr":"","error":"trace"}\n'
-        stderr = ""
-
-    monkeypatch.setattr(execution_sandbox.shutil, "which", lambda _: "docker")
-    monkeypatch.setattr(execution_sandbox.subprocess, "run", lambda *a, **k: Proc())
+    mock_proc = MagicMock()
+    mock_proc.returncode = 0
+    mock_proc.communicate.return_value = ('{"stdout":"","stderr":"","error":"trace"}\n', "")
+    mock_proc.pid = 99999
+    monkeypatch.setattr(
+        execution_sandbox.subprocess, "Popen", MagicMock(return_value=mock_proc)
+    )
     res = execution_sandbox.run_python_in_docker("print('ok')")
     assert res.ok is False
     assert res.error == "trace"

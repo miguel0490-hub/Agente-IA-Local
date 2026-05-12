@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import ast
 import json
-import shutil
 import subprocess
 import tempfile
 import textwrap
@@ -90,8 +89,6 @@ def validate_code_security(code: str) -> None:
 def run_python_in_docker(code: str, timeout_seconds: int = 8) -> SandboxResult:
     """Executes validated code inside a hardened ephemeral container."""
     validate_code_security(code)
-    if not shutil.which("docker"):
-        return SandboxResult(ok=False, error="Docker no está instalado o no está en PATH.")
 
     runner = textwrap.dedent(
         """
@@ -144,16 +141,28 @@ def run_python_in_docker(code: str, timeout_seconds: int = 8) -> SandboxResult:
             "python",
             "/workspace/runner.py",
         ]
+        from src.services.execution_watchdog import ExecutionWatchdog
+
+        watchdog = ExecutionWatchdog.get_instance()
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_seconds, check=False)
-        except subprocess.TimeoutExpired:
-            return SandboxResult(ok=False, error="Timeout de ejecución excedido. Proceso terminado.")
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            watchdog.watch(proc.pid, timeout_seconds + 5, label="sandbox-docker")
+            try:
+                stdout, stderr = proc.communicate(timeout=timeout_seconds)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.communicate()
+                return SandboxResult(ok=False, error="Timeout de ejecución excedido. Proceso terminado.")
+            finally:
+                watchdog.unwatch(proc.pid)
+        except FileNotFoundError:
+            return SandboxResult(ok=False, error="Docker no está instalado o no está en PATH.")
 
         if proc.returncode != 0:
-            return SandboxResult(ok=False, error=(proc.stderr or "Fallo de contenedor sandbox.").strip())
+            return SandboxResult(ok=False, error=(stderr or "Fallo de contenedor sandbox.").strip())
 
         try:
-            data = json.loads((proc.stdout or "").strip().splitlines()[-1])
+            data = json.loads((stdout or "").strip().splitlines()[-1])
         except Exception:
             return SandboxResult(ok=False, error="Respuesta inválida del sandbox.")
 

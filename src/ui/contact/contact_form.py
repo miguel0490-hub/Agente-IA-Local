@@ -8,6 +8,7 @@ import re
 import streamlit as st
 from dotenv import load_dotenv
 
+from src.core.i18n import t
 from src.database.database import create_contact_message, get_user_profile
 from src.services.email_service import _send_email
 
@@ -24,36 +25,37 @@ def render_contact_form() -> None:
     """Renderiza el formulario de contacto dentro de un st.dialog."""
     st.markdown(
         '<p style="color:#FFFFFF !important;-webkit-text-fill-color:#FFFFFF !important;font-size:0.95rem;margin-bottom:1rem;">'
-        "Envía un mensaje al equipo de administración. "
-        "Te responderemos lo antes posible.</p>",
+        f"{t('contact_intro')}</p>",
         unsafe_allow_html=True,
     )
 
     SUBJECT_OPTIONS = [
-        "Reportar un problema",
-        "Sugerencia o mejora",
-        "Problema con mi cuenta",
-        "Consulta general",
-        "Otro",
+        t("contact_report"),
+        t("contact_suggestion"),
+        t("contact_account_issue"),
+        t("contact_general"),
+        t("contact_other"),
     ]
 
     with st.form("contact_form", clear_on_submit=True):
-        subject = st.selectbox("Asunto", options=SUBJECT_OPTIONS)
+        subject = st.selectbox(t("contact_subject"), options=SUBJECT_OPTIONS)
         message = st.text_area(
-            "Mensaje",
-            placeholder="Describe tu consulta o problema con el mayor detalle posible...",
+            t("contact_message"),
+            placeholder=t("contact_message_placeholder"),
             height=150,
         )
-        submitted = st.form_submit_button("Enviar mensaje", use_container_width=True)
+        submitted = st.form_submit_button(t("contact_send"), use_container_width=True)
 
         if submitted:
             if not message or len(message.strip()) < 10:
-                st.warning("Por favor, escribe un mensaje de al menos 10 caracteres.")
+                st.warning(t("contact_min_chars"))
             else:
                 user_id = st.session_state.get("user_id")
                 create_contact_message(user_id, subject, message.strip())
                 _notify_admins(user_id, subject, message.strip())
-                st.success("Mensaje enviado correctamente. El administrador lo revisará pronto.")
+                from src.ui.components.notifications import add_notification
+                add_notification("📩 Mensaje enviado", "Tu mensaje ha sido enviado al administrador.", type="success")
+                st.success(t("contact_success"))
 
 
 def _notify_admins(user_id: int, subject: str, message: str) -> None:

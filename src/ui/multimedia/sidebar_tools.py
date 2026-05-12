@@ -6,6 +6,7 @@ import streamlit as st
 from src.core.security import check_scoped_rate_limit
 from src.services.file_validator import get_upload_policy
 from src.services.task_queue import enqueue_transcription, get_job_status
+from src.core.i18n import t
 
 
 def render_multimedia_sidebar_tools(
@@ -37,17 +38,17 @@ def render_multimedia_sidebar_tools(
             remaining_stt_jobs.append(job)
     st.session_state.pending_stt_jobs = remaining_stt_jobs
 
-    with st.expander("🛠️ Herramientas Multimedia", expanded=False):
-        if st.button("🔄 Estudio de Conversión", use_container_width=True):
+    with st.expander(t("multimedia_title"), expanded=False):
+        if st.button(t("multimedia_converter"), use_container_width=True):
             st.session_state["suggested_format"] = ""
             panel_conversor_fn()
 
         st.markdown("---")
 
-        st.markdown("**🎙️ Transcripción STT — Groq Whisper**")
-        st.caption("Transcribe audio a texto con Whisper Large v3.")
+        st.markdown(t("multimedia_stt_title"))
+        st.caption(t("multimedia_stt_desc"))
         audio_stt = st.file_uploader(
-            "Sube tu audio o vídeo",
+            t("multimedia_stt_upload"),
             key=f"uploader_stt_{st.session_state.form_clear_counter}",
         )
         if get_upload_policy() == "permissive":
@@ -56,17 +57,17 @@ def render_multimedia_sidebar_tools(
             st.caption("Límite para transcripción: audio/vídeo hasta 100 MB.")
         if audio_stt:
             if not check_scoped_rate_limit(str(st.session_state.user_id), scope="uploads"):
-                st.error("⏳ Has alcanzado el límite temporal de subidas. Espera un momento e inténtalo de nuevo.")
+                st.error(t("upload_rate_limit"))
                 audio_stt = None
             else:
                 check = secure_upload_check_fn(audio_stt.name, audio_stt.getvalue())
                 if not check.ok:
-                    st.error(f"⛔ Upload bloqueado: {check.reason}")
+                    st.error(t("upload_blocked", reason=check.reason))
                     audio_stt = None
 
         if audio_stt:
             st.audio(audio_stt, format=f"audio/{audio_stt.name.split('.')[-1]}")
-            if st.button("🎤 Transcribir", use_container_width=True, key="btn_stt"):
+            if st.button(t("multimedia_stt_button"), use_container_width=True, key="btn_stt"):
                 with st.spinner("Enviando a Groq Whisper… ⚡"):
                     groq_key = st.session_state.api_keys.get("GROQ_API_KEY", "")
                     job_id = enqueue_transcription(audio_stt.getvalue(), audio_stt.name, groq_key)
@@ -97,15 +98,15 @@ def render_multimedia_sidebar_tools(
 
         st.markdown("---")
 
-        st.markdown("**🔊 Síntesis de Voz — TTS**")
-        st.caption("Convierte texto a voz natural.")
+        st.markdown(t("multimedia_tts_title"))
+        st.caption(t("multimedia_tts_desc"))
 
         col_prov, col_voice = st.columns([1, 1])
         with col_prov:
-            prov_tts_sel = st.selectbox("Proveedor:", ["Edge TTS (Gratis)", "OpenAI TTS (Pago)"], key="tts_provider_sel")
+            prov_tts_sel = st.selectbox(t("multimedia_tts_provider"), [t("multimedia_tts_edge"), t("multimedia_tts_openai")], key="tts_provider_sel")
 
         with col_voice:
-            if prov_tts_sel == "OpenAI TTS (Pago)":
+            if prov_tts_sel == t("multimedia_tts_openai"):
                 voz_seleccionada = st.selectbox(
                     "Voz:",
                     ["alloy", "echo", "fable", "onyx", "nova", "shimmer"],
@@ -115,18 +116,18 @@ def render_multimedia_sidebar_tools(
             else:
                 from src.services.audio_service import AVAILABLE_EDGE_VOICES
 
-                voz_alias = st.selectbox("Voz (Regional):", list(AVAILABLE_EDGE_VOICES.keys()), key="edge_voice_selector")
+                voz_alias = st.selectbox(t("multimedia_tts_voice"), list(AVAILABLE_EDGE_VOICES.keys()), key="edge_voice_selector")
                 voz_seleccionada = AVAILABLE_EDGE_VOICES[voz_alias]
 
         texto_para_tts = st.text_area(
-            "Texto a sintetizar:",
-            placeholder="Escribe aquí el texto que quieres escuchar…",
-            height=180,
+            t("multimedia_tts_text"),
+            placeholder=t("multimedia_tts_placeholder"),
+            height=120,
             key=f"tts_input_text_{st.session_state.form_clear_counter}",
         )
-        if st.button("🔊 Generar Audio", use_container_width=True, key="btn_tts"):
+        if st.button(t("multimedia_tts_button"), use_container_width=True, key="btn_tts"):
             if not texto_para_tts.strip():
-                st.warning("⚠️ Escribe algo antes de sintetizar.")
+                st.warning(t("multimedia_tts_empty"))
             elif len(texto_para_tts) > 4096:
                 st.warning(
                     f"⚠️ El texto es demasiado largo ({len(texto_para_tts)}/4096 caracteres). "
@@ -134,7 +135,7 @@ def render_multimedia_sidebar_tools(
                 )
             else:
                 with st.spinner(f"Sintetizando con {prov_tts_sel}…"):
-                    if prov_tts_sel == "OpenAI TTS (Pago)":
+                    if prov_tts_sel == t("multimedia_tts_openai"):
                         proveedor_tts = get_openai_tts_provider_fn(voice=voz_seleccionada)
                     else:
                         proveedor_tts = get_edge_tts_provider_fn(voice=voz_seleccionada)
@@ -158,10 +159,10 @@ def render_multimedia_sidebar_tools(
 
         st.markdown("---")
 
-        st.markdown("**🎨 Generador de Assets — Texto a Imagen**")
-        st.caption("Genera imágenes con DALL-E 3 o Stability AI.")
+        st.markdown(t("multimedia_image_title"))
+        st.caption(t("multimedia_image_desc"))
         proveedor_imagen_sel = st.radio(
-            "Proveedor:",
+            t("multimedia_image_provider"),
             ["OpenAI DALL-E 3", "Stability AI"],
             horizontal=True,
             key="img_provider_radio",
@@ -175,15 +176,15 @@ def render_multimedia_sidebar_tools(
         if proveedor_imagen_sel == "OpenAI DALL-E 3":
             col_size, col_quality = st.columns(2)
             with col_size:
-                st.selectbox("Resolución:", ["1024x1024", "1792x1024", "1024x1792"], key="dalle_size")
+                st.selectbox(t("multimedia_image_resolution"), ["1024x1024", "1792x1024", "1024x1792"], key="dalle_size")
             with col_quality:
-                st.selectbox("Calidad:", ["standard", "hd"], key="dalle_quality")
+                st.selectbox(t("multimedia_image_quality"), ["standard", "hd"], key="dalle_quality")
         else:
-            st.selectbox("Proporción:", ["1:1", "16:9", "9:16", "3:2", "2:3", "4:5", "5:4"], key="stability_aspect")
-            st.text_input("Prompt negativo (opcional):", placeholder="Ej: blurry, low quality", key="stability_negative")
-        if st.button("🎨 Generar Imagen", use_container_width=True, key="btn_img_gen"):
+            st.selectbox(t("multimedia_image_ratio"), ["1:1", "16:9", "9:16", "3:2", "2:3", "4:5", "5:4"], key="stability_aspect")
+            st.text_input(t("multimedia_image_negative"), placeholder="Ej: blurry, low quality", key="stability_negative")
+        if st.button(t("multimedia_image_button"), use_container_width=True, key="btn_img_gen"):
             if not prompt_imagen_gen.strip():
-                st.warning("⚠️ Escribe un prompt antes de generar.")
+                st.warning(t("multimedia_image_empty"))
             else:
                 with st.spinner(f"Generando con {proveedor_imagen_sel}…"):
                     from src.services.image_gen_service import generate_image

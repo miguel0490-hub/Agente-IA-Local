@@ -12,12 +12,32 @@ import json
 import re
 
 import requests
-import google.genai as ggenai
-from google.genai import types
-from groq import Groq
-from openai import OpenAI
 
 from src.core.config import CARPETA_IMAGENES, PROMPT_TECH_LEAD
+
+
+def _lazy_ggenai():
+    """Lazy import for google.genai — avoids loading at startup."""
+    import google.genai as ggenai
+    return ggenai
+
+
+def _lazy_types():
+    """Lazy import for google.genai.types."""
+    from google.genai import types
+    return types
+
+
+def _lazy_groq():
+    """Lazy import for Groq SDK."""
+    from groq import Groq
+    return Groq
+
+
+def _lazy_openai():
+    """Lazy import for OpenAI SDK."""
+    from openai import OpenAI
+    return OpenAI
 
 
 def _env_int(name: str, default: int) -> int:
@@ -70,6 +90,8 @@ class GeminiProvider(LLMProvider):
             return
             
         try:
+            ggenai = _lazy_ggenai()
+            types = _lazy_types()
             cliente = ggenai.Client(api_key=self.api_key)
             model_name = 'gemini-2.5-pro'
 
@@ -131,6 +153,8 @@ class GeminiProvider(LLMProvider):
     def generar_imagen(self, prompt_artistico: str):
         if not self.api_key: return None, "❌ Funcionalidad omitida durante el onboarding por falta de clave (Gemini). Por favor, actualiza tu perfil."
         try:
+            ggenai = _lazy_ggenai()
+            types = _lazy_types()
             cliente = ggenai.Client(api_key=self.api_key)
             
             resultado = cliente.models.generate_images(
@@ -168,63 +192,135 @@ class GroqProvider(LLMProvider):
         super().__init__(api_key)
         self.model = model
 
+    _MINIMAL_SYSTEM_PROMPT = (
+        "Eres un asistente técnico experto. Responde de forma clara y concisa en español. "
+        "Si el usuario pide un archivo, responde con JSON: "
+        '{"action":"create_file","filename":"nombre.ext","content":"..."}. '
+        "Para búsquedas web: "
+        '{"action":"search_web","query":"..."}. '
+        "No generes archivos a menos que se pida explícitamente."
+    )
+
+    @staticmethod
+    def _compact_system_prompt(prompt: str, max_chars: int = 3000) -> str:
+        """Trims the system prompt to stay within Groq's tight TPM limits."""
+        if len(prompt) <= max_chars:
+            return prompt
+        cut_markers = [
+            "=== REGLAS PARA GENERACIÓN DE DOCUMENTOS PDF",
+            "=== REGLAS PARA GENERACIÓN DE TABLAS",
+            "=== HERRAMIENTA: CONVERSOR",
+            "=== HERRAMIENTA: EDITOR",
+        ]
+        trimmed = prompt
+        for marker in cut_markers:
+            idx = trimmed.find(marker)
+            if idx != -1:
+                trimmed = trimmed[:idx].rstrip()
+        if len(trimmed) > max_chars:
+            trimmed = trimmed[:max_chars].rsplit("\n", 1)[0]
+        trimmed += (
+            "\n\nNOTA: Si el usuario pide un PDF, tabla o documento, usa create_file "
+            "con el formato JSON habitual. Responde en texto plano para preguntas normales."
+        )
+        return trimmed
+
+    @staticmethod
+    def _trim_history(mensajes: list, keep_last: int = 4) -> list:
+        """Keeps system message + last N user/assistant turns to reduce token count."""
+        if len(mensajes) <= keep_last + 1:
+            return mensajes
+        system_msgs = [m for m in mensajes if m["role"] == "system"]
+        non_system = [m for m in mensajes if m["role"] != "system"]
+        return system_msgs + non_system[-keep_last:]
+
+    def _attempt_stream(self, cliente, model_name: str, mensajes: list,
+                        max_tokens: int, temperature: float, max_rounds: int):
+        """Single streaming attempt against one model, yields chunks."""
+        convo_messages = list(mensajes)
+        for _ in range(max_rounds):
+            streamed_parts = []
+            finish_reason = None
+            stream = cliente.chat.completions.create(
+                model=model_name,
+                messages=convo_messages,
+                stream=True,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+            for chunk in stream:
+                choice = chunk.choices[0]
+                delta_content = choice.delta.content
+                if delta_content:
+                    streamed_parts.append(delta_content)
+                    yield delta_content
+                if getattr(choice, "finish_reason", None):
+                    finish_reason = choice.finish_reason
+
+            full_round = "".join(streamed_parts).strip()
+            if finish_reason != "length" or not full_round:
+                return
+
+            convo_messages.append({"role": "assistant", "content": full_round})
+            convo_messages.append({"role": "user", "content": _continuation_prompt()})
+
     def stream_chat(self, mensaje: str, historial: list, system_instruction: str = None):
         if not self.api_key:
             yield "❌ Funcionalidad omitida durante el onboarding por falta de clave (Groq). Por favor, actualiza tu perfil."
             return
 
         try:
+            Groq = _lazy_groq()
             cliente = Groq(api_key=self.api_key)
-            mensajes = [{"role": "system", "content": system_instruction or PROMPT_TECH_LEAD}]
+            sys_prompt = self._compact_system_prompt(system_instruction or PROMPT_TECH_LEAD)
+            mensajes = [{"role": "system", "content": sys_prompt}]
             for m in historial:
                 if m.get("content"):
                     mensajes.append({"role": m["role"], "content": m["content"]})
             mensajes.append({"role": "user", "content": mensaje})
+
             preferred_model = os.getenv("GROQ_MODEL", self.model)
-            fallback_model = os.getenv("GROQ_FALLBACK_MODEL", "llama-3.1-70b-versatile")
+            fallback_model = os.getenv("GROQ_FALLBACK_MODEL", "llama-3.3-70b-versatile")
             candidate_models = [preferred_model]
             if fallback_model and fallback_model != preferred_model:
                 candidate_models.append(fallback_model)
+            if "llama-3.1-8b-instant" not in candidate_models:
+                candidate_models.append("llama-3.1-8b-instant")
 
-            max_tokens = _env_int("GROQ_MAX_TOKENS", 32768)
+            max_tokens = _env_int("GROQ_MAX_TOKENS", 8000)
             temperature = _env_float("GROQ_TEMPERATURE", 0.2)
-            max_rounds = max(1, _env_int("GROQ_CONTINUATION_ROUNDS", 3))
+            max_rounds = max(1, _env_int("GROQ_CONTINUATION_ROUNDS", 2))
 
             last_error = None
             for model_name in candidate_models:
-                try:
-                    convo_messages = list(mensajes)
-                    for _ in range(max_rounds):
-                        streamed_parts = []
-                        finish_reason = None
-                        stream = cliente.chat.completions.create(
-                            model=model_name,
-                            messages=convo_messages,
-                            stream=True,
-                            max_tokens=max_tokens,
-                            temperature=temperature,
+                for attempt in range(2):
+                    try:
+                        if attempt == 0:
+                            msgs = mensajes
+                        else:
+                            trimmed = self._trim_history(mensajes)
+                            trimmed[0] = {"role": "system", "content": self._MINIMAL_SYSTEM_PROMPT}
+                            msgs = trimmed
+                        for chunk in self._attempt_stream(
+                            cliente, model_name, msgs, max_tokens, temperature, max_rounds
+                        ):
+                            yield _clean_model_noise(chunk)
+                        return
+                    except Exception as inner_e:
+                        err_str = str(inner_e)
+                        is_recoverable = (
+                            "413" in err_str
+                            or "too large" in err_str.lower()
+                            or "rate_limit" in err_str.lower()
+                            or "tokens per minute" in err_str.lower()
                         )
-                        for chunk in stream:
-                            choice = chunk.choices[0]
-                            delta_content = choice.delta.content
-                            if delta_content:
-                                streamed_parts.append(delta_content)
-                                yield _clean_model_noise(delta_content)
-                            if getattr(choice, "finish_reason", None):
-                                finish_reason = choice.finish_reason
+                        if attempt == 0 and is_recoverable:
+                            continue
+                        last_error = inner_e
+                        break
 
-                        full_round = "".join(streamed_parts).strip()
-                        if finish_reason != "length" or not full_round:
-                            return
-
-                        convo_messages.append({"role": "assistant", "content": full_round})
-                        convo_messages.append({"role": "user", "content": _continuation_prompt()})
-                    return
-                except Exception as inner_e:
-                    last_error = inner_e
-                    continue
             raise last_error if last_error else RuntimeError("No se pudo inicializar Groq.")
-        except Exception as e:
+        except Exception:
             raise
 
 
@@ -236,6 +332,7 @@ class OpenRouterProvider(LLMProvider):
             return
 
         try:
+            OpenAI = _lazy_openai()
             cliente = OpenAI(
                 api_key=self.api_key,
                 base_url="https://openrouter.ai/api/v1",
@@ -313,6 +410,7 @@ class OllamaProvider(LLMProvider):
     def stream_chat(self, mensaje: str, historial: list, system_instruction: str = None):
         try:
             import httpx
+            OpenAI = _lazy_openai()
             cliente = OpenAI(
                 api_key=self.api_key,
                 base_url=self.base_url,
@@ -388,6 +486,7 @@ class CustomOpenAIProvider(LLMProvider):
 
         try:
             import httpx
+            OpenAI = _lazy_openai()
             cliente = OpenAI(
                 api_key=self.api_key,
                 base_url=self.base_url,
@@ -399,21 +498,25 @@ class CustomOpenAIProvider(LLMProvider):
                     mensajes.append({"role": m["role"], "content": m["content"]})
             mensajes.append({"role": "user", "content": mensaje})
 
-            max_tokens = _env_int("CUSTOM_OPENAI_MAX_TOKENS", 16384)
             temperature = _env_float("CUSTOM_OPENAI_TEMPERATURE", 0.2)
             max_rounds = max(1, _env_int("CUSTOM_OPENAI_CONTINUATION_ROUNDS", 3))
+            max_tokens_override = os.getenv("CUSTOM_OPENAI_MAX_TOKENS")
+
+            create_kwargs: dict = {
+                "model": self.model_name,
+                "messages": [],
+                "stream": True,
+                "temperature": temperature,
+            }
+            if max_tokens_override:
+                create_kwargs["max_tokens"] = int(max_tokens_override)
 
             convo_messages = list(mensajes)
             for _ in range(max_rounds):
                 streamed_parts = []
                 finish_reason = None
-                stream = cliente.chat.completions.create(
-                    model=self.model_name,
-                    messages=convo_messages,
-                    stream=True,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                )
+                create_kwargs["messages"] = convo_messages
+                stream = cliente.chat.completions.create(**create_kwargs)
                 for chunk in stream:
                     choice = chunk.choices[0]
                     delta_content = choice.delta.content
@@ -483,28 +586,26 @@ class LLMFactory:
     @staticmethod
     def get_provider(motor_name: str, api_keys: dict):
         if "Gemini" in motor_name:
-            from src.services.llm_provider import GeminiProvider
             return GeminiProvider(api_key=api_keys.get("GEMINI_API_KEY"))
             
         elif "Groq" in motor_name and "Whisper" not in motor_name:
-            from src.services.llm_provider import GroqProvider
             return GroqProvider(api_key=api_keys.get("GROQ_API_KEY"))
             
         elif "OpenRouter" in motor_name:
-            from src.services.llm_provider import OpenRouterProvider
             return OpenRouterProvider(api_key=api_keys.get("OPENROUTER_API_KEY"))
+
+        elif "Ollama" in motor_name:
+            return OllamaProvider()
             
         else:
             custom_models = api_keys.get("CUSTOM_MODELS", [])
             matched_custom = next((cm for cm in custom_models if f"🤖 {cm['name']}" == motor_name), None)
             
             if matched_custom:
-                from src.services.llm_provider import CustomOpenAIProvider
                 return CustomOpenAIProvider(
                     base_url=matched_custom["base_url"],
                     api_key=matched_custom["api_key"],
                     model_name=matched_custom["model_id"],
                 )
             
-            from src.services.llm_provider import OpenRouterProvider
             return OpenRouterProvider(api_key=api_keys.get("OPENROUTER_API_KEY"))

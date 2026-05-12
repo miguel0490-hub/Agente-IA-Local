@@ -61,6 +61,12 @@ def record_usage(
         if len(_usage_log) > 50_000:
             _usage_log.pop(0)
 
+    try:
+        from src.database.database import persist_usage_entry
+        persist_usage_entry(user_id, model, tokens_in, tokens_out, entry.estimated_cost)
+    except Exception as e:
+        logger.warning("Failed to persist usage to DB: %s", e)
+
     return entry
 
 

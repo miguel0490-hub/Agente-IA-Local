@@ -17,9 +17,25 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from src.core.logger import get_logger, set_correlation_id
-from src.security.zero_trust import ServiceRole, create_service_token
+from src.security.zero_trust import ServiceRole, create_service_token, verify_service_token
 
 logger = get_logger(__name__)
+
+_PUBLIC_PATHS = frozenset({"/api/v1/health", "/api/v1/status", "/api/docs", "/openapi.json"})
+
+
+async def require_auth(request: Request) -> None:
+    """Dependency that enforces service token auth on protected endpoints."""
+    if request.url.path in _PUBLIC_PATHS:
+        return
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+    token = auth_header[7:]
+    identity = verify_service_token(token)
+    if not identity:
+        raise HTTPException(status_code=401, detail="Invalid or expired service token")
+    request.state.service_identity = identity
 
 app = FastAPI(
     title="SuperAgente IA Gateway",
@@ -67,6 +83,7 @@ async def security_headers_middleware(request: Request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
+    response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
     return response
 
 
@@ -96,7 +113,7 @@ async def status():
 
 # --- Chat API ---
 
-@app.post("/api/v1/chat/completions")
+@app.post("/api/v1/chat/completions", dependencies=[Depends(require_auth)])
 async def chat_completions(request: Request):
     """Proxies chat requests through the AI pipeline with full governance."""
     try:
@@ -145,7 +162,7 @@ async def chat_completions(request: Request):
 
 # --- Admin API ---
 
-@app.get("/api/v1/admin/users")
+@app.get("/api/v1/admin/users", dependencies=[Depends(require_auth)])
 async def list_users(page: int = 1, page_size: int = 50):
     """Lists users with pagination."""
     from src.database.database import get_all_users, get_user_count
@@ -154,7 +171,7 @@ async def list_users(page: int = 1, page_size: int = 50):
     return {"users": users, "total": total, "page": page, "page_size": page_size}
 
 
-@app.get("/api/v1/admin/stats")
+@app.get("/api/v1/admin/stats", dependencies=[Depends(require_auth)])
 async def admin_stats():
     """Returns admin dashboard statistics."""
     from src.database.database import get_user_stats, get_contact_stats
@@ -166,13 +183,13 @@ async def admin_stats():
 
 # --- Cost & Usage API ---
 
-@app.get("/api/v1/usage/summary")
+@app.get("/api/v1/usage/summary", dependencies=[Depends(require_auth)])
 async def usage_summary(user_id: int | None = None):
     from src.services.cost_tracker import get_usage_summary
     return get_usage_summary(user_id)
 
 
-@app.get("/api/v1/usage/recent")
+@app.get("/api/v1/usage/recent", dependencies=[Depends(require_auth)])
 async def usage_recent(limit: int = 50):
     from src.services.cost_tracker import get_recent_usage
     return get_recent_usage(limit)
@@ -180,13 +197,38 @@ async def usage_recent(limit: int = 50):
 
 # --- Security API ---
 
-@app.get("/api/v1/security/audit-log")
+@app.get("/api/v1/agents/health", dependencies=[Depends(require_auth)])
+async def agent_health():
+    """Returns agent health monitor status including circuit breakers."""
+    from src.agents.health_monitor import AgentHealthMonitor
+    return AgentHealthMonitor.get_instance().get_health_status()
+
+
+@app.get("/api/v1/agents/fallback-chain", dependencies=[Depends(require_auth)])
+async def fallback_chain_status():
+    """Returns the status of the model fallback chain."""
+    from src.agents.model_fallback import get_fallback_chain
+    chain = get_fallback_chain()
+    return {
+        "chain": chain.get_chain_status({}),
+        "recent_failovers": chain.get_failover_log(20),
+    }
+
+
+@app.get("/api/v1/security/execution-guard", dependencies=[Depends(require_auth)])
+async def execution_guard_status():
+    """Returns execution timeout guard status."""
+    from src.security.execution_timeout_guard import ExecutionTimeoutGuard
+    return ExecutionTimeoutGuard.get_instance().get_status()
+
+
+@app.get("/api/v1/security/audit-log", dependencies=[Depends(require_auth)])
 async def audit_log():
     from src.security.tool_guard import get_audit_log
     return {"entries": get_audit_log()[-100:]}
 
 
-@app.get("/api/v1/security/policy-rules")
+@app.get("/api/v1/security/policy-rules", dependencies=[Depends(require_auth)])
 async def policy_rules():
     from src.security.policy_engine import get_policy_engine
     return {"rules": get_policy_engine().get_rule_summary()}
@@ -194,7 +236,7 @@ async def policy_rules():
 
 # --- Tenant API ---
 
-@app.get("/api/v1/tenant/{tenant_id}/usage")
+@app.get("/api/v1/tenant/{tenant_id}/usage", dependencies=[Depends(require_auth)])
 async def tenant_usage(tenant_id: int):
     from src.services.tenant import get_tenant_manager
     return get_tenant_manager().get_usage_summary(tenant_id)
@@ -202,7 +244,7 @@ async def tenant_usage(tenant_id: int):
 
 # --- Service Token API (internal) ---
 
-@app.post("/api/v1/internal/token")
+@app.post("/api/v1/internal/token", dependencies=[Depends(require_auth)])
 async def create_internal_token(request: Request):
     """Issues a service token for internal microservice communication."""
     body = await request.json()

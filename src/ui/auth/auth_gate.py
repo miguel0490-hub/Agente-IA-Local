@@ -15,6 +15,7 @@ from src.core.security import get_login_backoff_seconds
 from src.core.security import get_login_rate_limit_config
 from src.core.security import login_security_backend_ready
 from src.core.security import record_login_failure
+from src.core.i18n import t
 
 
 def render_auth_gate(
@@ -31,17 +32,17 @@ def render_auth_gate(
 
     col_left, central_col, col_right = st.columns([1, 2, 1])
     with central_col:
-        st.markdown("<h1 style='text-align: center; color: #00F2FE;'>⚡ SuperAgente IA Pro</h1>", unsafe_allow_html=True)
-        st.markdown("<h3 style='text-align: center; color: #A0AAB5;'>Acceso al Sistema</h3>", unsafe_allow_html=True)
+        st.markdown(f"<h1 style='text-align: center; color: #00F2FE;'>⚡ {t('app_title')}</h1>", unsafe_allow_html=True)
+        st.markdown(f"<h3 style='text-align: center; color: #A0AAB5;'>{t('auth_subtitle')}</h3>", unsafe_allow_html=True)
 
-        tab1, tab2, tab3 = st.tabs(["Iniciar Sesión", "Registrarse", "Olvidé mi contraseña"])
+        tab1, tab2, tab3 = st.tabs([t("login"), t("register"), t("forgot_password")])
 
         with tab1:
             with st.form("login_form"):
-                username = st.text_input("Usuario", placeholder="Tu usuario", autocomplete="username")
-                password = st.text_input("Contraseña", type="password", autocomplete="current-password")
-                remember_me = st.checkbox("🔒 Recuérdame en este dispositivo", value=False)
-                submitted = st.form_submit_button("Entrar", use_container_width=True)
+                username = st.text_input(t("username"), placeholder=t("username_placeholder"), autocomplete="username")
+                password = st.text_input(t("password"), type="password", autocomplete="current-password")
+                remember_me = st.checkbox(t("remember_me"), value=False)
+                submitted = st.form_submit_button(t("submit_login"), use_container_width=True)
                 if submitted:
                     if username and password:
                         remote = get_remote_address()
@@ -51,24 +52,24 @@ def render_auth_gate(
                         user_limit, user_window = get_login_rate_limit_config("user")
                         if not login_security_backend_ready():
                             st.error(
-                                "El servicio de autenticación no está disponible temporalmente. Intenta de nuevo más tarde."
+                                t("auth_service_unavailable")
                             )
                         elif not check_scoped_rate_limit(ip_key, "login", limit=ip_limit, window_seconds=ip_window):
-                            st.error("Demasiados intentos desde esta red. Espera unos minutos e inténtalo de nuevo.")
+                            st.error(t("auth_too_many_ip"))
                         elif not check_scoped_rate_limit(
                             user_key, "login", limit=user_limit, window_seconds=user_window
                         ):
-                            st.error("Demasiados intentos de inicio de sesión para este usuario. Espera unos minutos.")
+                            st.error(t("auth_too_many_user"))
                         else:
                             ip_wait = get_login_backoff_seconds(ip_key, "ip")
                             user_wait = get_login_backoff_seconds(user_key, "user")
                             wait_seconds = max(ip_wait, user_wait)
                             if wait_seconds > 0:
                                 st.error(
-                                    f"Por seguridad, espera {wait_seconds}s antes de volver a intentar iniciar sesión."
+                                    t("auth_backoff", wait_seconds=wait_seconds)
                                 )
                             else:
-                                with st.spinner("Autenticando conexión segura..."):
+                                with st.spinner(t("authenticating")):
                                     success, result = verify_login_fn(username, password)
                                 if success:
                                     st.session_state.user_id = result
@@ -94,29 +95,25 @@ def render_auth_gate(
                                     record_login_failure(user_key, "user")
                                     st.error(result)
                     else:
-                        st.warning("Completa todos los campos.")
+                        st.warning(t("fill_all_fields"))
 
         with tab2:
             with st.form("register_form"):
-                col1, col2 = st.columns(2)
-                with col1:
-                    first_name = st.text_input("Nombre", placeholder="Ingresa tu nombre")
-                with col2:
-                    last_name = st.text_input("Apellidos", placeholder="Ingresa tus apellidos")
+                first_name = st.text_input(t("first_name"), placeholder=t("first_name_placeholder"))
+                last_name = st.text_input(t("last_name"), placeholder=t("last_name_placeholder"))
+                email = st.text_input(t("email"), placeholder="ejemplo@correo.com")
+                new_username = st.text_input(t("new_username"), placeholder=t("new_username_placeholder"))
+                new_password = st.text_input(t("new_password"), type="password")
+                confirm_password = st.text_input(t("confirm_password"), type="password")
 
-                email = st.text_input("Correo Electrónico", placeholder="ejemplo@correo.com")
-                new_username = st.text_input("Nuevo Usuario", placeholder="Elige un nombre de usuario")
-                new_password = st.text_input("Nueva Contraseña", type="password")
-                confirm_password = st.text_input("Confirmar Contraseña", type="password")
-
-                reg_submitted = st.form_submit_button("Crear Cuenta Premium", use_container_width=True)
+                reg_submitted = st.form_submit_button(t("create_account"), use_container_width=True)
                 if reg_submitted:
                     if not all([first_name, last_name, email, new_username, new_password, confirm_password]):
-                        st.error("Todos los campos son obligatorios.")
+                        st.error(t("all_fields_required"))
                     elif new_password != confirm_password:
-                        st.error("Las contraseñas no coinciden.")
+                        st.error(t("passwords_mismatch"))
                     elif not re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", email):
-                        st.error("Por favor, introduce un correo electrónico válido.")
+                        st.error(t("invalid_email"))
                     else:
                         success, result = register_user_fn(first_name, last_name, email, new_username, new_password)
                         if success:
@@ -125,15 +122,15 @@ def render_auth_gate(
 
                             send_verification_email(email, first_name, token)
                             st.success(
-                                f"¡Bienvenido/a {first_name}! Revisa tu bandeja de entrada (y Spam) para activar tu cuenta Premium."
+                                t("welcome_registered", name=first_name)
                             )
                         else:
                             st.error(result)
 
         with tab3:
             with st.form("forgot_password_form"):
-                rec_email = st.text_input("Correo Electrónico registrado")
-                if st.form_submit_button("Enviar enlace de recuperación", use_container_width=True):
+                rec_email = st.text_input(t("registered_email"))
+                if st.form_submit_button(t("send_recovery"), use_container_width=True):
                     if rec_email:
                         from src.database.database import generate_password_reset_token
                         from src.services.email_service import send_password_reset_email
@@ -141,8 +138,8 @@ def render_auth_gate(
                         success, f_name, r_token = generate_password_reset_token(rec_email)
                         if success:
                             send_password_reset_email(rec_email, f_name, r_token)
-                        st.success("Si el correo está registrado, recibirás un enlace de recuperación pronto.")
+                        st.success(t("recovery_sent"))
                     else:
-                        st.warning("Por favor, introduce tu correo electrónico.")
+                        st.warning(t("enter_email"))
 
     st.stop()

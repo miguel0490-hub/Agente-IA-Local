@@ -118,29 +118,6 @@ services:
     tmpfs:
       - /tmp:size=64m,noexec,nosuid
 
-  prometheus:
-    image: prom/prometheus:v2.51.0
-    volumes:
-      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ./deploy/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
-      - prometheus_data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.retention.time=30d'
-    restart: unless-stopped
-
-  grafana:
-    image: grafana/grafana:10.4.0
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
-      - GF_USERS_ALLOW_SIGN_UP=false
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
-    depends_on:
-      - prometheus
-    restart: unless-stopped
-
   nginx:
     image: nginx:1.27-alpine
     depends_on:
@@ -155,7 +132,5 @@ services:
 
 volumes:
   pgdata:
-  prometheus_data:
-  grafana_data:
   prometheus_data:
   grafana_data:

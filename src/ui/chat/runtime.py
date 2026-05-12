@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import os
+import uuid as _uuid
 
 import streamlit as st
+
+from src.core.i18n import t
 from src.core.sanitizer import sanitize_markdown_text
 
 
@@ -42,7 +45,7 @@ def handle_chat_interaction(
     update_chat_title_fn,
 ) -> None:
     """Handles chat input, model execution, tool calls and persistence."""
-    prompt = st.chat_input("Escribe tu consulta o pídele que genere una imagen...")
+    prompt = st.chat_input(t("chat_placeholder"))
     if not prompt:
         return
 
@@ -51,7 +54,7 @@ def handle_chat_interaction(
     from src.core.security import check_scoped_rate_limit
 
     if not check_scoped_rate_limit(str(st.session_state.user_id), scope="chat", limit=10, window_seconds=60):
-        st.error("⏳ Has superado el límite de mensajes por minuto. Por favor, espera un momento para evitar saturar los servicios de IA.")
+        st.error(t("chat_rate_limit"))
         st.stop()
 
     renamed = False
@@ -196,42 +199,102 @@ def handle_chat_interaction(
                     st.warning("⚠️ Este motor no soporta análisis de imágenes locales.")
 
             from src.services.llm_provider import LLMFactory
+            from src.services.semantic_cache import get_semantic_cache
+            from src.agents.prompt_manager import enrich_system_instruction
+            from src.agents.tool_router import get_tool_router
+            from src.agents.health_monitor import AgentHealthMonitor
+            from src.agents.model_fallback import get_fallback_chain
+            from src.agents.validators import validate_response
+
+            _active_role = st.session_state.get("active_role", "")
+            _enriched_instruction = enrich_system_instruction(
+                system_instruction_activo,
+                role_name=_active_role,
+                user_prompt=prompt,
+            )
+
+            _tool_router = get_tool_router()
+            _routing = _tool_router.route(_active_role, prompt)
+            max_iteraciones = _routing.max_iterations
+
+            _health_monitor = AgentHealthMonitor.get_instance()
+            _request_id = _uuid.uuid4().hex[:12]
 
             provider = LLMFactory.get_provider(motor_name=motor, api_keys=st.session_state.api_keys)
             clean_res = ""
             file_paths = []
-            max_iteraciones = 4
             iteracion = 0
+            tools = []
+            _did_web_search = False
+
+            _sem_cache = get_semantic_cache()
+            _cached = _sem_cache.get(prompt_final, motor, system_instruction=_enriched_instruction)
+            if _cached:
+                clean_res = _cached
+                res_placeholder.markdown(sanitize_markdown_text(clean_res))
+                st.toast("⚡ Respuesta recuperada de caché", icon="⚡")
+                iteracion = max_iteraciones
+
+            _health_monitor.start_request(
+                _request_id,
+                agent_role=_routing.role_key,
+                provider=motor,
+            )
 
             while iteracion < max_iteraciones:
                 iteracion += 1
                 full_res = ""
                 try:
                     if "Gemini" in motor:
-                        gen = provider.stream_chat(carga_util, st.session_state.messages[:-1], system_instruction=system_instruction_activo)
+                        gen = provider.stream_chat(carga_util, st.session_state.messages[:-1], system_instruction=_enriched_instruction)
                     else:
-                        gen = provider.stream_chat(prompt_final, st.session_state.messages[:-1], system_instruction=system_instruction_activo)
+                        gen = provider.stream_chat(prompt_final, st.session_state.messages[:-1], system_instruction=_enriched_instruction)
                     for chunk in gen:
                         if chunk:
                             full_res += chunk
                             res_placeholder.markdown(full_res + "▌")
+                            _health_monitor.heartbeat(_request_id)
                 except Exception as e:
-                    if "Groq" in motor:
+                    _health_monitor.complete_request(_request_id, error=str(e))
+                    _fallback_chain = get_fallback_chain()
+                    _provider_name = _fallback_chain._extract_provider_name(motor)
+                    fallback_tier = _fallback_chain.get_fallback(
+                        _provider_name, st.session_state.api_keys,
+                    )
+                    if fallback_tier:
+                        err_str = str(e)
                         res_placeholder.empty()
-                        st.warning(f"⚠️ El motor primario (Groq) falló ({str(e)}). Redirigiendo a Gemini...")
-                        provider_backup = LLMFactory.get_provider(motor_name="Gemini (Fallback)", api_keys=st.session_state.api_keys)
-                        carga_util = [prompt_final]
-                        if imagen_adjunta:
-                            carga_util.append(imagen_adjunta)
+                        st.warning(f"⚠️ Error de {_provider_name}: {err_str[:200]}")
+                        st.info(f"🔄 Cambiando automáticamente a {fallback_tier.name}...")
+                        provider_backup = LLMFactory.get_provider(
+                            motor_name=fallback_tier.motor_key,
+                            api_keys=st.session_state.api_keys,
+                        )
+                        _request_id_fb = _uuid.uuid4().hex[:12]
+                        _health_monitor.start_request(
+                            _request_id_fb,
+                            agent_role=_routing.role_key,
+                            provider=fallback_tier.name,
+                        )
+                        if "Gemini" in fallback_tier.motor_key:
+                            carga_util = [prompt_final]
+                            if imagen_adjunta:
+                                carga_util.append(imagen_adjunta)
                         full_res = ""
                         try:
-                            gen_backup = provider_backup.stream_chat(carga_util, st.session_state.messages[:-1], system_instruction=system_instruction_activo)
+                            if "Gemini" in fallback_tier.motor_key:
+                                gen_backup = provider_backup.stream_chat(carga_util, st.session_state.messages[:-1], system_instruction=_enriched_instruction)
+                            else:
+                                gen_backup = provider_backup.stream_chat(prompt_final, st.session_state.messages[:-1], system_instruction=_enriched_instruction)
                             for chunk in gen_backup:
                                 if chunk:
                                     full_res += chunk
                                     res_placeholder.markdown(full_res + "▌")
+                                    _health_monitor.heartbeat(_request_id_fb)
+                            _health_monitor.complete_request(_request_id_fb)
                         except Exception as e_backup:
-                            st.error(f"❌ Fallo crítico en el sistema de respaldo: {e_backup}")
+                            _health_monitor.complete_request(_request_id_fb, error=str(e_backup))
+                            st.error(f"❌ Error en el sistema de respaldo ({fallback_tier.name}): {e_backup}")
                             break
                     else:
                         st.error(f"❌ Error en la generación ({motor}): {e}")
@@ -240,7 +303,12 @@ def handle_chat_interaction(
                 from src.core.agent_tools import parse_tool_calls
                 from src.services.file_factory import FileFactory
 
-                clean_res, tools = parse_tool_calls(full_res)
+                clean_res, tools = parse_tool_calls(full_res, role_name=_active_role)
+
+                _validation = validate_response(clean_res)
+                if _validation.sanitized_text:
+                    clean_res = _validation.sanitized_text
+
                 clean_res_safe = sanitize_markdown_text(clean_res)
                 res_placeholder.markdown(clean_res_safe)
 
@@ -254,8 +322,10 @@ def handle_chat_interaction(
                     codigo = execute_tool.get("code", "")
                     with st.spinner("Ejecutando código Python en sandbox local..."):
                         from src.services.execution_service import CodeExecutionService
+                        from src.security.execution_timeout_guard import ExecutionTimeoutGuard
 
                         exec_service = CodeExecutionService()
+                        _guard = ExecutionTimeoutGuard.get_instance()
                         resultado_ejecucion = exec_service.execute_python(codigo)
                     st.info("💻 Ejecución de código local completada.")
                     st.session_state.messages.append({"role": "assistant", "content": clean_res_safe})
@@ -274,7 +344,7 @@ def handle_chat_interaction(
 
                 rag_tool = next((t for t in tools if t.get("action") == "query_rag"), None)
                 if rag_tool:
-                    query = rag_tool.get("query", "")
+                    query = rag_tool.get("query", "").strip().replace("\\n", "").replace("\n", "")
                     with st.spinner(f"Consultando Cerebro RAG para: '{query}'..."):
                         from src.services.rag_service import RAGService
 
@@ -297,22 +367,37 @@ def handle_chat_interaction(
 
                 search_tool = next((t for t in tools if t.get("action") == "search_web"), None)
                 if search_tool:
-                    query = search_tool.get("query", "")
+                    _did_web_search = True
+                    query = search_tool.get("query", "").strip().replace("\\n", "").replace("\n", "")
                     with st.spinner(f"Buscando en la web: '{query}'..."):
                         from src.services.web_search import search_web
 
                         resultados_web = search_web(query)
                     st.info(f"🌐 Búsqueda web completada: {query}")
                     st.session_state.messages.append({"role": "assistant", "content": clean_res_safe})
+                    user_wants_file = any(
+                        kw in prompt.lower()
+                        for kw in ("pdf", "informe", "documento", "archivo", "excel", "report", "genera un")
+                    )
+                    if user_wants_file:
+                        file_instruction = (
+                            "4. El usuario SÍ pidió un documento. Genera contenido EXTENSO y "
+                            "PROFESIONAL con el formato adecuado usando create_file.\n"
+                        )
+                    else:
+                        file_instruction = (
+                            "4. El usuario NO pidió un documento. PROHIBIDO usar create_file, "
+                            "PROHIBIDO generar PDF/HTML. Responde SOLO en texto plano en el chat.\n"
+                        )
                     msg_sistema = (
                         f"RESULTADOS DE BÚSQUEDA PARA '{query}':\n{resultados_web}\n\n"
-                        "INSTRUCCIONES POST-BÚSQUEDA:\n"
+                        "INSTRUCCIONES POST-BÚSQUEDA (OBLIGATORIAS):\n"
                         "1. Analiza TODAS las fuentes anteriores en profundidad.\n"
-                        "2. Si el usuario pidió un documento (PDF, informe, análisis), genera contenido "
-                        "EXTENSO, EXHAUSTIVO y PROFESIONAL con todas las secciones obligatorias del prompt de sistema.\n"
-                        "3. NO resumas en 2 párrafos. Desarrolla cada sección con datos concretos extraídos de las fuentes.\n"
-                        "4. Si es un PDF, el HTML debe tener mínimo 5-6 secciones h2 con contenido denso.\n"
-                        "5. Genera la respuesta definitiva ahora."
+                        "2. Responde al usuario con un resumen claro, completo y bien estructurado "
+                        "basado en los datos extraídos de las fuentes.\n"
+                        "3. PROHIBIDO usar bloques ```json con create_file a menos que se indique en el punto 4.\n"
+                        + file_instruction
+                        + "5. Genera la respuesta definitiva ahora."
                     )
                     st.session_state.messages.append({"role": "user", "content": msg_sistema})
                     if "Gemini" in motor:
@@ -323,13 +408,21 @@ def handle_chat_interaction(
                     continue
                 break
 
+            _health_monitor.complete_request(_request_id)
+
+            if clean_res and not _cached:
+                _sem_cache.put(prompt_final, motor, clean_res, system_instruction=_enriched_instruction)
+
             file_paths = []
             if tools:
                 factory = FileFactory(output_dir=carpeta_imagenes)
                 rendered_paths = set()
+                _allowed_tools = _routing.allowed_tools
                 for tool in tools:
                     tool = _normalize_tool_by_user_intent(tool, prompt)
                     action = str(tool.get("action") or "unknown")
+                    if action not in _allowed_tools:
+                        continue
                     tool_scope_id = f"{st.session_state.user_id}:{action}"
                     if not check_scoped_rate_limit(tool_scope_id, scope="tools"):
                         st.warning("⏳ Has alcanzado temporalmente el límite de uso de herramientas. Espera un momento.")
@@ -337,6 +430,10 @@ def handle_chat_interaction(
                         continue
                     if tool.get("action") == "search_web":
                         continue
+                    if tool.get("action") == "create_file" and _did_web_search:
+                        _file_keywords = ("pdf", "informe", "documento", "archivo", "excel", "report")
+                        if not any(kw in prompt.lower() for kw in _file_keywords):
+                            continue
                     if tool.get("action") == "open_converter":
                         last_user_text = st.session_state.messages[-1].get("content", "") if st.session_state.messages else ""
                         if tool.get("requires_confirmation") and not tool_guard_cls.has_explicit_approval(last_user_text, "open_converter"):

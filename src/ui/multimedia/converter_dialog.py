@@ -6,6 +6,8 @@ import os
 import uuid
 
 import streamlit as st
+
+from src.core.i18n import t
 from src.core.security import check_scoped_rate_limit
 from src.services.task_queue import enqueue_conversion, get_job_status
 from src.services.file_validator import get_upload_policy_summary
@@ -39,23 +41,23 @@ def render_converter_dialog(carpeta_imagenes: str, secure_upload_check, run_conv
             remaining_jobs.append(job)
     st.session_state.pending_conversion_jobs = remaining_jobs
 
-    st.write("Sube cualquier archivo (video, audio, imagen, documento) y conviértelo al instante.")
-    archivo_conv = st.file_uploader("📥 Arrastra tu archivo aquí", key=f"uploader_conv_{st.session_state.form_clear_counter}")
+    st.write(t("converter_intro"))
+    archivo_conv = st.file_uploader(t("converter_upload"), key=f"uploader_conv_{st.session_state.form_clear_counter}")
     st.caption(get_upload_policy_summary())
     if archivo_conv:
         if not check_scoped_rate_limit(str(st.session_state.user_id), scope="uploads"):
-            st.error("⏳ Has alcanzado el límite temporal de subidas. Espera un momento e inténtalo de nuevo.")
+            st.error(t("upload_rate_limit"))
             return
         check = secure_upload_check(archivo_conv.name, archivo_conv.getvalue())
         if not check.ok:
-            st.error(f"⛔ Upload bloqueado: {check.reason}")
+            st.error(t("upload_blocked", reason=check.reason))
             return
 
     if archivo_conv:
-        st.info(f"Archivo detectado: {archivo_conv.name}")
-        formato_destino = st.text_input("Formato de destino (ej: mp3, pdf, docx, png)", value=st.session_state.get("suggested_format", ""))
+        st.info(f"{t('converter_detected')} {archivo_conv.name}")
+        formato_destino = st.text_input(t("converter_format"), value=st.session_state.get("suggested_format", ""))
 
-        if st.button("🚀 Convertir", use_container_width=True):
+        if st.button(t("converter_button"), use_container_width=True):
             if formato_destino:
                 formato_destino = formato_destino.strip().replace(".", "")
                 with st.spinner(f"Convirtiendo a .{formato_destino} (Aceleración Local)..."):
@@ -77,7 +79,7 @@ def render_converter_dialog(carpeta_imagenes: str, secure_upload_check, run_conv
 
                     exito = run_conversion(temp_input, temp_output)
                     if exito:
-                        st.toast("✅ ¡Conversión Exitosa!", icon="✅")
+                        st.toast(t("converter_success"), icon="✅")
                         st.session_state.messages.append(
                             {
                                 "role": "assistant",
@@ -90,7 +92,7 @@ def render_converter_dialog(carpeta_imagenes: str, secure_upload_check, run_conv
                         st.session_state.form_clear_counter += 1
                         st.rerun()
                     else:
-                        st.error("❌ Falló la conversión.")
+                        st.error(t("converter_failed"))
 
                     if os.path.exists(temp_input):
                         os.remove(temp_input)
