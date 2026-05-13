@@ -99,9 +99,9 @@ from src.ui.sidebar.chat_management import render_chat_management
 from src.ui.sidebar.main_panel import render_main_sidebar_panel
 from src.ui.sidebar.profile import render_sidebar_profile
 from src.ui.onboarding.onboarding_gate import render_onboarding_gate
-from src.ui.multimedia.sidebar_tools import render_multimedia_sidebar_tools
 from src.ui.components.chat_messages import render_chat_messages
 from src.ui.components.header import render_main_header
+from src.ui.chat.composer_hub import render_chat_composer_hub
 from src.ui.chat.runtime import handle_chat_interaction
 from src.ui.chat.provider_greetings import maybe_inject_provider_greeting
 from src.ui.sidebar.mobile_behavior import apply_mobile_sidebar_autoclose, apply_mobile_sidebar_default_closed
@@ -154,16 +154,9 @@ apply_mobile_sidebar_default_closed()
 # --- INTERFAZ PRINCIPAL ---
 render_main_header()
 
-motor, archivo, system_instruction_activo = render_main_sidebar_panel(
+motor, system_instruction_activo = render_main_sidebar_panel(
     get_roles_fn=dialogs.get_roles,
     cambiar_rol_fn=dialogs.cambiar_rol,
-    secure_upload_check_fn=secure_upload_check,
-    render_multimedia_sidebar_tools_fn=render_multimedia_sidebar_tools,
-    panel_conversor_fn=dialogs.panel_conversor,
-    get_groq_whisper_provider_fn=get_groq_whisper_provider,
-    get_openai_tts_provider_fn=get_openai_tts_provider,
-    get_edge_tts_provider_fn=get_edge_tts_provider,
-    guardar_memoria_fn=guardar_memoria,
     limpiar_memoria_fn=limpiar_memoria,
     delete_chat_fn=delete_chat,
 )
@@ -172,9 +165,18 @@ maybe_inject_provider_greeting(motor, guardar_memoria)
 
 render_chat_messages(st.session_state.messages, render_download_button)
 
+render_chat_composer_hub(
+    secure_upload_check_fn=secure_upload_check,
+    panel_conversor_fn=dialogs.panel_conversor,
+    get_groq_whisper_provider_fn=get_groq_whisper_provider,
+    get_openai_tts_provider_fn=get_openai_tts_provider,
+    get_edge_tts_provider_fn=get_edge_tts_provider,
+    guardar_memoria_fn=guardar_memoria,
+)
+
 handle_chat_interaction(
     motor=motor,
-    archivo=archivo,
+    archivos_adjuntos=None,
     system_instruction_activo=system_instruction_activo,
     parse_intent_fn=parse_intent,
     get_gemini_provider_fn=get_gemini_provider,

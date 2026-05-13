@@ -63,7 +63,7 @@ def _normalize_tool_by_user_intent(tool: dict, user_prompt: str) -> dict:
 
 def handle_chat_interaction(
     motor: str,
-    archivo,
+    archivos_adjuntos: list | None,
     system_instruction_activo: str,
     parse_intent_fn,
     get_gemini_provider_fn,
@@ -149,46 +149,65 @@ def handle_chat_interaction(
                 )
         guardar_memoria_fn(st.session_state.chat_id, st.session_state.messages, st.session_state.api_keys)
     else:
+        from pathlib import Path as _Path
+
+        from PIL import Image
+
         from src.services.document_parser import extraer_texto_archivo
+        from src.ui.chat.composer_hub import attachments_for_chat_send
+
+        if archivos_adjuntos is not None:
+            archivos = [a for a in archivos_adjuntos if a is not None]
+        else:
+            archivos = attachments_for_chat_send()
 
         texto_extraido = ""
-        imagen_adjunta = None
-        video_adjunto_path = None
+        imagenes_adjuntas: list = []
+        video_local_paths: list[str] = []
 
-        if archivo:
-            from pathlib import Path as _Path
+        _exts_imagen = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff", ".ico"}
+        _exts_video = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv"}
 
-            _ext = _Path(archivo.name.lower()).suffix
-            _exts_imagen = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff", ".ico"}
-            _exts_video = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv"}
+        for archivo in archivos:
+            name = getattr(archivo, "name", "") or ""
+            _ext = _Path(name.lower()).suffix
 
             if _ext in _exts_imagen:
-                from PIL import Image
-
-                imagen_adjunta = Image.open(archivo)
-                texto_extraido = t("attach_image_note", name=archivo.name)
+                try:
+                    if hasattr(archivo, "seek"):
+                        archivo.seek(0)
+                    imagenes_adjuntas.append(Image.open(archivo))
+                    texto_extraido += t("attach_image_note", name=name)
+                except Exception as e:
+                    texto_extraido += t("attach_doc_error_block", name=name, body=str(e))
             elif _ext in _exts_video:
-                import uuid
-
-                safe_filename = f"video_analisis_{uuid.uuid4().hex[:8]}{_ext}"
-                video_adjunto_path = os.path.join(carpeta_imagenes, safe_filename)
-                with open(video_adjunto_path, "wb") as f:
+                safe_filename = f"video_analisis_{_uuid.uuid4().hex[:8]}{_ext}"
+                video_path = os.path.join(carpeta_imagenes, safe_filename)
+                with open(video_path, "wb") as f:
                     f.write(archivo.getbuffer())
-                texto_extraido = t("attach_video_note", name=archivo.name)
+                video_local_paths.append(video_path)
+                texto_extraido += t("attach_video_note", name=name)
             else:
+                if hasattr(archivo, "seek"):
+                    archivo.seek(0)
                 contenido_extraido = extraer_texto_archivo(archivo)
                 if contenido_extraido.startswith("⛔"):
                     st.warning(contenido_extraido)
-                    texto_extraido = t("attach_doc_error_block", name=archivo.name, body=contenido_extraido)
+                    texto_extraido += t("attach_doc_error_block", name=name, body=contenido_extraido)
                 else:
-                    texto_extraido = t(
+                    texto_extraido += t(
                         "attach_doc_content_block",
-                        name=archivo.name.upper(),
+                        name=name.upper(),
                         content=contenido_extraido,
                     )
 
         prompt_final = prompt + texto_extraido
         prompt_final_safe = sanitize_markdown_text(prompt_final)
+
+        if archivos:
+            st.session_state.staged_attachments = []
+            st.session_state.attachment_hub_uploader_inc = int(st.session_state.get("attachment_hub_uploader_inc", 0)) + 1
+
         st.session_state.messages.append({"role": "user", "content": prompt_final_safe})
         with st.chat_message("user", avatar="🧑‍💻"):
             st.markdown(prompt_final_safe)
@@ -198,42 +217,54 @@ def handle_chat_interaction(
 
             if "Gemini" in motor:
                 carga_util = [prompt_final]
-                if imagen_adjunta:
-                    carga_util.append(imagen_adjunta)
-                if video_adjunto_path:
-                    import google.genai as ggenai
+                for im in imagenes_adjuntas:
+                    carga_util.append(im)
+                if video_local_paths:
                     import time
 
-                    try:
-                        with st.status(t("video_status_init"), expanded=True) as status:
-                            st.write(t("video_uploading"))
-                            gemini_key = st.session_state.api_keys.get("GEMINI_API_KEY")
-                            if not gemini_key:
-                                st.error(t("video_missing_key"))
-                                st.stop()
-                            cliente_g = ggenai.Client(api_key=gemini_key)
-                            video_file = cliente_g.files.upload(file=video_adjunto_path)
-                            start_time = time.time()
-                            while video_file.state.name == "PROCESSING":
-                                elapsed = int(time.time() - start_time)
-                                status.update(label=t("video_analyzing", elapsed=elapsed), state="running")
-                                time.sleep(2)
-                                video_file = cliente_g.files.get(name=video_file.name)
-                            if video_file.state.name == "FAILED":
-                                status.update(label=t("video_failed"), state="error", expanded=True)
-                                st.error(t("video_decode_error"))
-                                st.stop()
-                            status.update(
-                                label=t("video_done", seconds=int(time.time() - start_time)),
-                                state="complete",
-                                expanded=False,
-                            )
-                        carga_util.append(video_file)
-                    finally:
-                        if video_adjunto_path and os.path.exists(video_adjunto_path):
-                            os.remove(video_adjunto_path)
+                    import google.genai as ggenai
+
+                    gemini_key = st.session_state.api_keys.get("GEMINI_API_KEY")
+                    if not gemini_key:
+                        st.error(t("video_missing_key"))
+                        for vp in video_local_paths:
+                            if os.path.exists(vp):
+                                os.remove(vp)
+                        st.stop()
+                    cliente_g = ggenai.Client(api_key=gemini_key)
+                    n_vid = len(video_local_paths)
+                    for vi, video_path in enumerate(video_local_paths):
+                        try:
+                            label = t("video_status_init")
+                            if n_vid > 1:
+                                label = f"{label} ({vi + 1}/{n_vid})"
+                            with st.status(label, expanded=True) as status:
+                                st.write(t("video_uploading"))
+                                video_file = cliente_g.files.upload(file=video_path)
+                                start_time = time.time()
+                                while video_file.state.name == "PROCESSING":
+                                    elapsed = int(time.time() - start_time)
+                                    status.update(label=t("video_analyzing", elapsed=elapsed), state="running")
+                                    time.sleep(2)
+                                    video_file = cliente_g.files.get(name=video_file.name)
+                                if video_file.state.name == "FAILED":
+                                    status.update(label=t("video_failed"), state="error", expanded=True)
+                                    st.error(t("video_decode_error"))
+                                    for vp2 in video_local_paths[vi:]:
+                                        if os.path.exists(vp2):
+                                            os.remove(vp2)
+                                    st.stop()
+                                status.update(
+                                    label=t("video_done", seconds=int(time.time() - start_time)),
+                                    state="complete",
+                                    expanded=False,
+                                )
+                            carga_util.append(video_file)
+                        finally:
+                            if video_path and os.path.exists(video_path):
+                                os.remove(video_path)
             else:
-                if imagen_adjunta:
+                if imagenes_adjuntas:
                     st.warning(t("image_motor_unsupported"))
 
             from src.services.llm_provider import LLMFactory
@@ -318,8 +349,8 @@ def handle_chat_interaction(
                         )
                         if "Gemini" in fallback_tier.motor_key:
                             carga_util = [prompt_final]
-                            if imagen_adjunta:
-                                carga_util.append(imagen_adjunta)
+                            for im in imagenes_adjuntas:
+                                carga_util.append(im)
                         full_res = ""
                         try:
                             if "Gemini" in fallback_tier.motor_key:

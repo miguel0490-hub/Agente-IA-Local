@@ -1,11 +1,9 @@
-"""Primary operation sidebar panel (role, engine, uploads, multimedia, clear actions)."""
+"""Primary operation sidebar panel (role, engine, clear actions)."""
 
 from __future__ import annotations
 
 import streamlit as st
 from src.agents.capabilities import CAPABILITY_PROFILES
-from src.core.security import check_scoped_rate_limit
-from src.services.file_validator import get_upload_policy_summary
 from src.core.i18n import t
 from src.ui.sidebar.engine_options import motor_disponibles_labels
 
@@ -29,17 +27,10 @@ def _normalize_role_selector_value(raw: str | None, keys: list[str]) -> None:
 def render_main_sidebar_panel(
     get_roles_fn,
     cambiar_rol_fn,
-    secure_upload_check_fn,
-    render_multimedia_sidebar_tools_fn,
-    panel_conversor_fn,
-    get_groq_whisper_provider_fn,
-    get_openai_tts_provider_fn,
-    get_edge_tts_provider_fn,
-    guardar_memoria_fn,
     limpiar_memoria_fn,
     delete_chat_fn,
-) -> tuple[str, object, str]:
-    """Renders main sidebar controls and returns selected engine, attachment and system prompt."""
+) -> tuple[str, str]:
+    """Renders main sidebar controls; attachments live in the chat composer hub."""
     with st.sidebar:
         st.header(t("agent_role"))
         roles_map = get_roles_fn()
@@ -90,36 +81,6 @@ def render_main_sidebar_panel(
 
         st.divider()
 
-        st.markdown(t("attach_file"))
-        archivo = st.file_uploader(
-            t("attach_label"),
-            help=t("attach_help"),
-            label_visibility="collapsed",
-        )
-        st.caption(get_upload_policy_summary())
-        if archivo:
-            if not check_scoped_rate_limit(str(st.session_state.user_id), scope="uploads"):
-                st.error(t("upload_rate_limit"))
-                archivo = None
-            else:
-                check = secure_upload_check_fn(archivo.name, archivo.getvalue())
-                if not check.ok:
-                    st.error(t("upload_blocked", reason=check.reason))
-                    archivo = None
-
-        st.divider()
-
-        render_multimedia_sidebar_tools_fn(
-            panel_conversor_fn=panel_conversor_fn,
-            secure_upload_check_fn=secure_upload_check_fn,
-            get_groq_whisper_provider_fn=get_groq_whisper_provider_fn,
-            get_openai_tts_provider_fn=get_openai_tts_provider_fn,
-            get_edge_tts_provider_fn=get_edge_tts_provider_fn,
-            guardar_memoria_fn=guardar_memoria_fn,
-        )
-
-        st.divider()
-
         st.markdown('<div class="danger-btn">', unsafe_allow_html=True)
         c1, c2 = st.columns(2)
         with c1:
@@ -128,6 +89,10 @@ def render_main_sidebar_panel(
                 st.session_state.messages = []
                 st.session_state.last_motor_selected = None
                 st.session_state.form_clear_counter += 1
+                st.session_state.staged_attachments = []
+                st.session_state.attachment_hub_uploader_inc = int(
+                    st.session_state.get("attachment_hub_uploader_inc", 0)
+                ) + 1
                 st.rerun()
         with c2:
             if not st.session_state.get("confirm_delete_chat"):
@@ -144,6 +109,10 @@ def render_main_sidebar_panel(
                         st.session_state.messages = []
                         st.session_state.form_clear_counter += 1
                         st.session_state.confirm_delete_chat = False
+                        st.session_state.staged_attachments = []
+                        st.session_state.attachment_hub_uploader_inc = int(
+                            st.session_state.get("attachment_hub_uploader_inc", 0)
+                        ) + 1
                         st.rerun()
                 with cd2:
                     if st.button(t("cancel_button"), use_container_width=True, key="btn_cancelar_eliminar"):
@@ -151,4 +120,4 @@ def render_main_sidebar_panel(
                         st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
-    return motor, archivo, system_instruction_activo
+    return motor, system_instruction_activo

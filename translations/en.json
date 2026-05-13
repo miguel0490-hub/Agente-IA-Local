@@ -86,6 +86,13 @@
     "attach_file": "**📁 Attach File**",
     "attach_label": "Code, docs, images, data…",
     "attach_help": "Supported formats: text, code, PDF, Word, Excel, images, JSON, YAML, logs and more.",
+    "hub_attachments_expander": "Attach files",
+    "hub_file_uploader_label": "Select one or more files",
+    "hub_max_staged": "Maximum {max} files in queue.",
+    "hub_clear_all_attachments": "Remove all",
+    "hub_multimedia_expander": "Multimedia",
+    "hub_staged_hint": "Will be sent with your next message:",
+    "hub_remove_attachment": "Remove attachment",
     "upload_rate_limit": "⏳ You've reached the upload limit. Wait a moment and try again.",
     "upload_blocked": "⛔ Upload blocked: {reason}",
     "clear_messages": "🧹 Clear messages",
@@ -430,5 +437,7 @@
     "error_ollama_url_blocked": "Ollama URL blocked: {reason}",
     "mf_all_failed": "\n\n❌ All providers failed. Last error: {error}",
     "mf_switching": "\n\n⚠️ {provider} unavailable. Switching to {fallback}...\n\n",
-    "mf_exhausted": "\n\n❌ Exhausted all available provider attempts."
+    "mf_exhausted": "\n\n❌ Exhausted all available provider attempts.",
+    "contact_notif_title": "📩 Message sent",
+    "contact_notif_body": "Your message was sent to the administrator."
 }

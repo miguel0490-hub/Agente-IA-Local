@@ -86,6 +86,13 @@
     "attach_file": "**📁 Joindre un fichier**",
     "attach_label": "Code, documents, images, données…",
     "attach_help": "Formats pris en charge : texte, code, PDF, Word, Excel, images, JSON, YAML, logs et plus.",
+    "hub_attachments_expander": "Joindre des fichiers",
+    "hub_file_uploader_label": "Sélectionnez un ou plusieurs fichiers",
+    "hub_max_staged": "Maximum {max} fichiers en file.",
+    "hub_clear_all_attachments": "Tout retirer",
+    "hub_multimedia_expander": "Multimédia",
+    "hub_staged_hint": "Seront envoyés avec votre prochain message :",
+    "hub_remove_attachment": "Retirer la pièce jointe",
     "upload_rate_limit": "⏳ Vous avez atteint la limite d'envoi. Patientez un instant et réessayez.",
     "upload_blocked": "⛔ Envoi bloqué : {reason}",
     "clear_messages": "🧹 Effacer les messages",
@@ -430,5 +437,7 @@
     "error_ollama_url_blocked": "URL Ollama bloquée : {reason}",
     "mf_all_failed": "\n\n❌ Tous les fournisseurs ont échoué. Dernière erreur : {error}",
     "mf_switching": "\n\n⚠️ {provider} indisponible. Bascule vers {fallback}...\n\n",
-    "mf_exhausted": "\n\n❌ Toutes les tentatives de fournisseurs sont épuisées."
+    "mf_exhausted": "\n\n❌ Toutes les tentatives de fournisseurs sont épuisées.",
+    "contact_notif_title": "📩 Message envoyé",
+    "contact_notif_body": "Votre message a été envoyé à l’administrateur."
 }

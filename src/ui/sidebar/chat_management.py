@@ -10,6 +10,12 @@ import streamlit as st
 from src.core.i18n import t
 
 
+def _reset_composer_staging() -> None:
+    """Clears chat-attachment staging when switching or creating chats."""
+    st.session_state.staged_attachments = []
+    st.session_state.attachment_hub_uploader_inc = int(st.session_state.get("attachment_hub_uploader_inc", 0)) + 1
+
+
 def _export_messages_json(messages: list[dict]) -> str:
     return json.dumps(messages, ensure_ascii=False, indent=2)
 
@@ -52,6 +58,7 @@ def render_chat_management(
         nuevo_id = create_chat_fn(st.session_state.user_id, t("new_chat_title"))
         st.session_state.chat_id = nuevo_id
         st.session_state.messages = []
+        _reset_composer_staging()
         st.rerun()
 
     # --- Search ---
@@ -73,6 +80,7 @@ def render_chat_management(
                 if st.button(label, key=f"search_result_{result['chat_id']}", use_container_width=True):
                     st.session_state.chat_id = result["chat_id"]
                     st.session_state.messages = cargar_memoria_fn(result["chat_id"])
+                    _reset_composer_staging()
                     st.session_state.auto_close_sidebar = True
                     st.rerun()
         else:
@@ -94,6 +102,7 @@ def render_chat_management(
         if chat_seleccionado != st.session_state.chat_id:
             st.session_state.chat_id = chat_seleccionado
             st.session_state.messages = cargar_memoria_fn(st.session_state.chat_id)
+            _reset_composer_staging()
             st.session_state.auto_close_sidebar = True
             st.rerun()
     else:
@@ -102,6 +111,7 @@ def render_chat_management(
             nuevo_id = create_chat_fn(st.session_state.user_id, t("new_chat_title"))
             st.session_state.chat_id = nuevo_id
             st.session_state.messages = []
+            _reset_composer_staging()
             st.rerun()
 
     # --- Rename current chat ---

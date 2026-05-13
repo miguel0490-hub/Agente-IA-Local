@@ -26,6 +26,8 @@ def initialize_session_state() -> None:
         "form_clear_counter": 0,
         "security_events": [],
         "last_activity_ts": time.time(),
+        "staged_attachments": [],
+        "attachment_hub_uploader_inc": 0,
     }
     for key, value in defaults.items():
         if key not in st.session_state:

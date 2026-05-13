@@ -86,6 +86,13 @@
     "attach_file": "**📁 Anexar Arquivo**",
     "attach_label": "Código, documentos, imagens, dados…",
     "attach_help": "Formatos suportados: texto, código, PDF, Word, Excel, imagens, JSON, YAML, logs e mais.",
+    "hub_attachments_expander": "Anexar arquivos",
+    "hub_file_uploader_label": "Selecione um ou mais arquivos",
+    "hub_max_staged": "No máximo {max} arquivos na fila.",
+    "hub_clear_all_attachments": "Remover todos",
+    "hub_multimedia_expander": "Multimídia",
+    "hub_staged_hint": "Serão enviados com a próxima mensagem:",
+    "hub_remove_attachment": "Remover anexo",
     "upload_rate_limit": "⏳ Você atingiu o limite de envio. Aguarde um momento e tente novamente.",
     "upload_blocked": "⛔ Envio bloqueado: {reason}",
     "clear_messages": "🧹 Limpar mensagens",
@@ -430,5 +437,7 @@
     "error_ollama_url_blocked": "URL Ollama bloqueada: {reason}",
     "mf_all_failed": "\n\n❌ Todos os fornecedores falharam. Último erro: {error}",
     "mf_switching": "\n\n⚠️ {provider} indisponível. A mudar para {fallback}...\n\n",
-    "mf_exhausted": "\n\n❌ Esgotadas todas as tentativas de fornecedores."
+    "mf_exhausted": "\n\n❌ Esgotadas todas as tentativas de fornecedores.",
+    "contact_notif_title": "📩 Mensagem enviada",
+    "contact_notif_body": "A sua mensagem foi enviada ao administrador."
 }
