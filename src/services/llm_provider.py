@@ -416,7 +416,7 @@ class OllamaProvider(LLMProvider):
             from src.security.url_validator import validate_url
             result = validate_url(self.base_url, context="ollama_base_url")
             if not result.safe:
-            raise ValueError(t("error_ollama_url_blocked", reason=result.reason))
+                raise ValueError(t("error_ollama_url_blocked", reason=result.reason))
 
     def stream_chat(self, mensaje: str, historial: list, system_instruction: str = None):
         try:
