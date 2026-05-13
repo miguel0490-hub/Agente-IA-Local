@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import html
 import io
 import uuid
 from pathlib import Path
@@ -122,15 +123,18 @@ def render_chat_composer_hub(
     staged = list(st.session_state.staged_attachments)
     if staged:
         st.caption(t("hub_staged_hint"))
-        # Columnas con peso: chips agrupados a la izquierda; columna final absorbe el resto.
+        # Pesos relativos: si el peso del chip es demasiado bajo frente al "relleno",
+        # Streamlit deja columnas de pocos px y el nombre se apila letra a letra.
+        n = len(staged)
+        filler = max(40, min(200, 220 - n * 14))
         weights: list[int] = []
         for item in staged:
             name = item.get("name") or ""
             if _is_image_filename(name):
-                weights.append(16)
+                weights.append(58)
             else:
-                weights.append(max(7, min(14, 5 + len(name) // 5)))
-        weights.append(480)
+                weights.append(max(30, min(72, 26 + len(name) // 2)))
+        weights.append(filler)
         cols = st.columns(weights)
         for i, item in enumerate(staged):
             with cols[i]:
@@ -142,10 +146,20 @@ def render_chat_composer_hub(
                             use_container_width=False,
                         )
                     except Exception:
-                        st.caption("🖼")
+                        st.markdown(
+                            '<p style="margin:0;color:#94a3b8;">🖼</p>',
+                            unsafe_allow_html=True,
+                        )
                 nm = item.get("name") or "—"
-                short = nm if len(nm) <= 24 else nm[:21] + "…"
-                st.caption(short)
+                short = nm if len(nm) <= 40 else nm[:37] + "…"
+                esc = html.escape(short)
+                esc_title = html.escape(nm)
+                st.markdown(
+                    f'<p title="{esc_title}" style="margin:0.15rem 0 0.35rem 0;color:#cbd5e1;'
+                    f"font-size:0.8125rem;line-height:1.25;white-space:nowrap;overflow:hidden;"
+                    f'text-overflow:ellipsis;">{esc}</p>',
+                    unsafe_allow_html=True,
+                )
                 if st.button(
                     "✕",
                     key=f"hub_chip_rm_{item['id']}",
