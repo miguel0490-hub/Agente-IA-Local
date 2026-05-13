@@ -8,6 +8,7 @@ import html
 import io
 import uuid
 from pathlib import Path
+from urllib.parse import urlencode
 
 import streamlit as st
 
@@ -105,17 +106,60 @@ def _thumb_data_uri(data: bytes, name: str) -> str | None:
         return None
 
 
+def _chip_remove_href(item_id: str) -> str:
+    """Builds query string for removing a chip while preserving existing params (e.g. token)."""
+    flat: list[tuple[str, str]] = []
+    try:
+        for key in st.query_params.keys():
+            if key == "hub_rm":
+                continue
+            val = st.query_params.get(key)
+            if isinstance(val, (list, tuple)):
+                for x in val:
+                    flat.append((key, str(x)))
+            elif val is not None:
+                flat.append((key, str(val)))
+    except Exception:
+        pass
+    flat.append(("hub_rm", item_id))
+    return "?" + urlencode(flat)
+
+
+def _consume_hub_rm_query() -> None:
+    """If URL contains hub_rm=, drops that attachment and strips the param."""
+    try:
+        if "hub_rm" not in st.query_params:
+            return
+        raw = st.query_params.get("hub_rm")
+        if isinstance(raw, list):
+            raw = raw[0] if raw else ""
+        rid = str(raw or "").strip()
+        if rid:
+            st.session_state.staged_attachments = [
+                x for x in st.session_state.get("staged_attachments", []) if str(x.get("id")) != rid
+            ]
+        try:
+            del st.query_params["hub_rm"]
+        except Exception:
+            pass
+        st.rerun()
+    except Exception:
+        pass
+
+
 def _glass_chip_html(
     *,
     title: str,
     label_esc: str,
     icon: str,
     image_thumb_uri: str | None,
+    remove_href: str,
+    remove_title_esc: str,
 ) -> str:
-    """Single attachment card: frosted panel + icon or thumbnail + filename."""
+    """Single attachment card: frosted panel + icon or thumbnail + filename + hover close link."""
     glass = (
         "background:rgba(15,23,42,0.48);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);"
-        "border:1px solid rgba(148,163,184,0.32);border-radius:14px;padding:8px 10px 10px;"
+        "border:1px solid rgba(148,163,184,0.32);border-radius:14px;padding:8px 30px 10px 10px;"
         "box-shadow:0 2px 14px rgba(0,0,0,0.28);margin:0 8px 8px 0;"
     )
     if image_thumb_uri:
@@ -134,7 +178,12 @@ def _glass_chip_html(
             f"{label_esc}</span>"
             "</div>"
         )
-    return f'<div title="{title}" style="{glass}">{body}</div>'
+    href_esc = html.escape(remove_href, quote=True)
+    closer = (
+        f'<a class="hub-att-chip-x" href="{href_esc}" title="{remove_title_esc}" '
+        f'aria-label="{remove_title_esc}">×</a>'
+    )
+    return f'<div class="hub-att-chip-wrap" title="{title}" style="{glass}">{body}{closer}</div>'
 
 
 def _fingerprint(name: str, data: bytes) -> str:
@@ -165,10 +214,11 @@ def render_chat_composer_hub(
     guardar_memoria_fn,
 ) -> None:
     """Renders STT job toasts, attachment staging, and multimedia tools in the main column."""
-    process_pending_stt_jobs(guardar_memoria_fn)
-
     st.session_state.setdefault("staged_attachments", [])
     st.session_state.setdefault("attachment_hub_uploader_inc", 0)
+
+    process_pending_stt_jobs(guardar_memoria_fn)
+    _consume_hub_rm_query()
 
     col_a, col_b = st.columns(2)
     with col_a:
@@ -254,23 +304,17 @@ def render_chat_composer_hub(
                     short = nm if len(nm) <= 36 else nm[:33] + "…"
                     esc_label = html.escape(short)
                     esc_title = html.escape(nm, quote=True)
+                    esc_rm = html.escape(t("hub_remove_attachment"), quote=True)
                     thumb = None
                     if _is_image_filename(nm):
                         thumb = _thumb_data_uri(item["data"], nm)
+                    rm_href = _chip_remove_href(str(item["id"]))
                     chip_html = _glass_chip_html(
                         title=esc_title,
                         label_esc=esc_label,
                         icon=icon,
                         image_thumb_uri=thumb,
+                        remove_href=rm_href,
+                        remove_title_esc=esc_rm,
                     )
                     st.markdown(chip_html, unsafe_allow_html=True)
-                    if st.button(
-                        "✕",
-                        key=f"hub_chip_rm_{item['id']}",
-                        help=t("hub_remove_attachment"),
-                        type="secondary",
-                    ):
-                        st.session_state.staged_attachments = [
-                            x for x in st.session_state.staged_attachments if x["id"] != item["id"]
-                        ]
-                        st.rerun()

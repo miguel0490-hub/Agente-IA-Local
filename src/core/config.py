@@ -357,6 +357,30 @@ ESTILOS_CSS = f"""
     [data-testid="stSidebar"] hr {{ margin-top: 8px !important; margin-bottom: 8px !important; border-color: rgba(255,255,255,0.05) !important; }}
     [data-testid="stSidebar"] h3 {{ font-size: 0.78rem !important; text-transform: uppercase; letter-spacing: 1.5px; color: rgba(255,255,255,0.45) !important; font-weight: 600 !important; margin-bottom: 6px !important; margin-top: 4px !important; }}
 
+    /* Selectores en sidebar: aspecto de desplegable neutro (no botón primario) */
+    [data-testid="stSidebar"] div[data-baseweb="select"] > div {{
+        background-color: rgba(15, 23, 42, 0.95) !important;
+        border: 1px solid rgba(148, 163, 184, 0.35) !important;
+        border-radius: 8px !important;
+        box-shadow: none !important;
+        min-height: 2.65rem !important;
+    }}
+    [data-testid="stSidebar"] div[data-baseweb="select"] > div:hover {{
+        border-color: rgba(56, 189, 248, 0.45) !important;
+        box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.12) !important;
+    }}
+    [data-testid="stSidebar"] div[data-baseweb="select"] svg {{
+        fill: #94a3b8 !important;
+        width: 1.1rem !important;
+        height: 1.1rem !important;
+    }}
+    [data-testid="stSidebar"] div[data-baseweb="select"] span {{
+        color: #e2e8f0 !important;
+        -webkit-text-fill-color: #e2e8f0 !important;
+        font-weight: 500 !important;
+        font-size: 0.9rem !important;
+    }}
+
     /* ── Tarjeta de Perfil Premium (Glassmorphism) ─────────────── */
     .user-profile-card {{
         background: linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.95) 100%);
@@ -435,8 +459,8 @@ ESTILOS_CSS = f"""
     }}
 
     /* Secundarios en columna principal: pills discretos (chips adjuntos, quitar, etc.) */
-    div[data-testid="stMain"] div[data-testid="stButton"] button[kind="secondary"],
-    div[data-testid="stMain"] div[data-testid="stButton"] button[kind="secondary"] * {{
+    [data-testid="stMain"] div[data-testid="stButton"] button[kind="secondary"],
+    [data-testid="stMain"] div[data-testid="stButton"] button[kind="secondary"] * {{
         background: rgba(51, 65, 85, 0.75) !important;
         background-image: none !important;
         color: #F1F5F9 !important;
@@ -453,7 +477,7 @@ ESTILOS_CSS = f"""
         min-height: 2rem !important;
         min-width: 2rem !important;
     }}
-    div[data-testid="stMain"] div[data-testid="stButton"] button[kind="secondary"]:hover {{
+    [data-testid="stMain"] div[data-testid="stButton"] button[kind="secondary"]:hover {{
         background: rgba(71, 85, 105, 0.92) !important;
         border-color: rgba(0, 242, 254, 0.45) !important;
         box-shadow: 0 0 0 1px rgba(0, 242, 254, 0.18) !important;
@@ -461,29 +485,71 @@ ESTILOS_CSS = f"""
         filter: none !important;
     }}
 
-    /* Main + expanders: textareas e inputs con contraste (TTS, imagen, etc.) */
-    div[data-testid="stMain"] [data-testid="stExpander"] [data-testid="stTextArea"] textarea,
-    div[data-testid="stMain"] [data-testid="stExpander"] [data-baseweb="textarea"] textarea {{
-        color: #F1F5F9 !important;
-        -webkit-text-fill-color: #F1F5F9 !important;
+    /* Main: textareas con contraste (TTS, imagen, hub; no depender solo del expander — DOM Streamlit puede variar) */
+    [data-testid="stMain"] [data-testid="stTextArea"] textarea,
+    [data-testid="stMain"] [data-baseweb="textarea"] textarea {{
+        color: #F8FAFC !important;
+        -webkit-text-fill-color: #F8FAFC !important;
         background-color: rgba(15, 23, 42, 0.92) !important;
         caret-color: #00F2FE !important;
         border-color: rgba(71, 85, 105, 0.9) !important;
     }}
-    div[data-testid="stMain"] [data-testid="stExpander"] [data-testid="stTextArea"] textarea::placeholder {{
-        color: #94A3B8 !important;
-        -webkit-text-fill-color: #94A3B8 !important;
+    [data-testid="stMain"] [data-testid="stTextArea"] textarea::placeholder,
+    [data-testid="stMain"] [data-testid="stTextArea"] textarea::-webkit-input-placeholder,
+    [data-testid="stMain"] [data-baseweb="textarea"] textarea::placeholder,
+    [data-testid="stMain"] [data-baseweb="textarea"] textarea::-webkit-input-placeholder {{
+        color: #E2E8F0 !important;
+        -webkit-text-fill-color: #E2E8F0 !important;
         opacity: 1 !important;
     }}
-    div[data-testid="stMain"] [data-testid="stExpander"] [data-testid="stTextInput"] input {{
+    [data-testid="stMain"] [data-testid="stExpander"] [data-testid="stTextInput"] input {{
         color: #F1F5F9 !important;
         -webkit-text-fill-color: #F1F5F9 !important;
         background-color: rgba(15, 23, 42, 0.92) !important;
         border-color: rgba(71, 85, 105, 0.9) !important;
     }}
-    div[data-testid="stMain"] [data-testid="stExpander"] [data-testid="stTextInput"] input::placeholder {{
+    [data-testid="stMain"] [data-testid="stExpander"] [data-testid="stTextInput"] input::placeholder {{
         color: #94A3B8 !important;
         opacity: 1 !important;
+    }}
+
+    /* Chips adjuntos (markdown): cruz en esquina, visible al hover */
+    .hub-att-chip-wrap {{
+        position: relative;
+        display: block;
+    }}
+    a.hub-att-chip-x {{
+        position: absolute;
+        top: 5px;
+        right: 5px;
+        width: 22px;
+        height: 22px;
+        line-height: 20px;
+        text-align: center;
+        border-radius: 7px;
+        background: rgba(15, 23, 42, 0.78);
+        color: #e2e8f0;
+        font-size: 14px;
+        font-weight: 700;
+        text-decoration: none !important;
+        opacity: 0;
+        transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+        z-index: 4;
+        box-sizing: border-box;
+        border: 1px solid rgba(148, 163, 184, 0.25);
+    }}
+    .hub-att-chip-wrap:hover a.hub-att-chip-x {{
+        opacity: 1;
+    }}
+    a.hub-att-chip-x:hover {{
+        color: #fff !important;
+        background: rgba(220, 38, 38, 0.9) !important;
+        border-color: rgba(248, 113, 113, 0.55) !important;
+    }}
+    @media (hover: none) {{
+        a.hub-att-chip-x {{
+            opacity: 0.55;
+        }}
     }}
 
     /* ── Cajas de Texto y Formularios ───────────────────────── */
@@ -873,25 +939,29 @@ ESTILOS_CSS = f"""
             padding: 10px !important;
         }}
 
-        /* Texto legible en expanders del chat (móvil) */
-        div[data-testid="stMain"] [data-testid="stExpander"] [data-testid="stTextArea"] textarea,
-        div[data-testid="stMain"] [data-testid="stExpander"] [data-baseweb="textarea"] textarea {{
-            color: #F1F5F9 !important;
-            -webkit-text-fill-color: #F1F5F9 !important;
+        /* Texto legible en textareas del main (móvil; mismo criterio que escritorio) */
+        [data-testid="stMain"] [data-testid="stTextArea"] textarea,
+        [data-testid="stMain"] [data-baseweb="textarea"] textarea {{
+            color: #F8FAFC !important;
+            -webkit-text-fill-color: #F8FAFC !important;
             background-color: rgba(15, 23, 42, 0.95) !important;
         }}
-        div[data-testid="stMain"] [data-testid="stExpander"] [data-testid="stTextArea"] textarea::placeholder {{
-            color: #94A3B8 !important;
-            -webkit-text-fill-color: #94A3B8 !important;
+        [data-testid="stMain"] [data-testid="stTextArea"] textarea::placeholder,
+        [data-testid="stMain"] [data-testid="stTextArea"] textarea::-webkit-input-placeholder,
+        [data-testid="stMain"] [data-baseweb="textarea"] textarea::placeholder,
+        [data-testid="stMain"] [data-baseweb="textarea"] textarea::-webkit-input-placeholder {{
+            color: #E2E8F0 !important;
+            -webkit-text-fill-color: #E2E8F0 !important;
+            opacity: 1 !important;
         }}
-        div[data-testid="stMain"] [data-testid="stExpander"] [data-testid="stTextInput"] input {{
+        [data-testid="stMain"] [data-testid="stExpander"] [data-testid="stTextInput"] input {{
             color: #F1F5F9 !important;
             -webkit-text-fill-color: #F1F5F9 !important;
             background-color: rgba(15, 23, 42, 0.95) !important;
         }}
 
         /* Secundarios compactos en main (chips) — mantiene target táctil razonable */
-        div[data-testid="stMain"] div[data-testid="stButton"] button[kind="secondary"] {{
+        [data-testid="stMain"] div[data-testid="stButton"] button[kind="secondary"] {{
             min-height: 40px !important;
             min-width: 40px !important;
             padding: 0.35rem 0.75rem !important;
