@@ -434,6 +434,58 @@ ESTILOS_CSS = f"""
         filter: brightness(1.1) !important;
     }}
 
+    /* Secundarios en columna principal: pills discretos (chips adjuntos, quitar, etc.) */
+    div[data-testid="stMain"] div[data-testid="stButton"] button[kind="secondary"],
+    div[data-testid="stMain"] div[data-testid="stButton"] button[kind="secondary"] * {{
+        background: rgba(51, 65, 85, 0.75) !important;
+        background-image: none !important;
+        color: #F1F5F9 !important;
+        -webkit-text-fill-color: #F1F5F9 !important;
+        fill: #CBD5E1 !important;
+        border: 1px solid rgba(148, 163, 184, 0.4) !important;
+        border-radius: 9999px !important;
+        box-shadow: none !important;
+        font-weight: 600 !important;
+        font-size: 0.82rem !important;
+        transform: none !important;
+        filter: none !important;
+        padding: 0.2rem 0.55rem !important;
+        min-height: 2rem !important;
+        min-width: 2rem !important;
+    }}
+    div[data-testid="stMain"] div[data-testid="stButton"] button[kind="secondary"]:hover {{
+        background: rgba(71, 85, 105, 0.92) !important;
+        border-color: rgba(0, 242, 254, 0.45) !important;
+        box-shadow: 0 0 0 1px rgba(0, 242, 254, 0.18) !important;
+        transform: none !important;
+        filter: none !important;
+    }}
+
+    /* Main + expanders: textareas e inputs con contraste (TTS, imagen, etc.) */
+    div[data-testid="stMain"] [data-testid="stExpander"] [data-testid="stTextArea"] textarea,
+    div[data-testid="stMain"] [data-testid="stExpander"] [data-baseweb="textarea"] textarea {{
+        color: #F1F5F9 !important;
+        -webkit-text-fill-color: #F1F5F9 !important;
+        background-color: rgba(15, 23, 42, 0.92) !important;
+        caret-color: #00F2FE !important;
+        border-color: rgba(71, 85, 105, 0.9) !important;
+    }}
+    div[data-testid="stMain"] [data-testid="stExpander"] [data-testid="stTextArea"] textarea::placeholder {{
+        color: #94A3B8 !important;
+        -webkit-text-fill-color: #94A3B8 !important;
+        opacity: 1 !important;
+    }}
+    div[data-testid="stMain"] [data-testid="stExpander"] [data-testid="stTextInput"] input {{
+        color: #F1F5F9 !important;
+        -webkit-text-fill-color: #F1F5F9 !important;
+        background-color: rgba(15, 23, 42, 0.92) !important;
+        border-color: rgba(71, 85, 105, 0.9) !important;
+    }}
+    div[data-testid="stMain"] [data-testid="stExpander"] [data-testid="stTextInput"] input::placeholder {{
+        color: #94A3B8 !important;
+        opacity: 1 !important;
+    }}
+
     /* ── Cajas de Texto y Formularios ───────────────────────── */
     div[data-testid="stTextInput"] label p,
     div[data-testid="stPasswordInput"] label p {{ color: #F8FAFC !important; font-weight: 600 !important; font-size: 14px !important; }}
@@ -819,6 +871,30 @@ ESTILOS_CSS = f"""
         /* ── Expanders: compactos ─────────────────────────── */
         div[data-testid="stExpanderDetails"] {{
             padding: 10px !important;
+        }}
+
+        /* Texto legible en expanders del chat (móvil) */
+        div[data-testid="stMain"] [data-testid="stExpander"] [data-testid="stTextArea"] textarea,
+        div[data-testid="stMain"] [data-testid="stExpander"] [data-baseweb="textarea"] textarea {{
+            color: #F1F5F9 !important;
+            -webkit-text-fill-color: #F1F5F9 !important;
+            background-color: rgba(15, 23, 42, 0.95) !important;
+        }}
+        div[data-testid="stMain"] [data-testid="stExpander"] [data-testid="stTextArea"] textarea::placeholder {{
+            color: #94A3B8 !important;
+            -webkit-text-fill-color: #94A3B8 !important;
+        }}
+        div[data-testid="stMain"] [data-testid="stExpander"] [data-testid="stTextInput"] input {{
+            color: #F1F5F9 !important;
+            -webkit-text-fill-color: #F1F5F9 !important;
+            background-color: rgba(15, 23, 42, 0.95) !important;
+        }}
+
+        /* Secundarios compactos en main (chips) — mantiene target táctil razonable */
+        div[data-testid="stMain"] div[data-testid="stButton"] button[kind="secondary"] {{
+            min-height: 40px !important;
+            min-width: 40px !important;
+            padding: 0.35rem 0.75rem !important;
         }}
 
         /* ── File Uploader: zona táctil amplia ────────────── */

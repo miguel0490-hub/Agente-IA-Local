@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import io
 import uuid
+from pathlib import Path
 
 import streamlit as st
 
@@ -14,6 +15,14 @@ from src.services.file_validator import get_upload_policy_summary
 from src.ui.multimedia.sidebar_tools import process_pending_stt_jobs, render_multimedia_tools_body
 
 MAX_STAGED_FILES = 12
+
+_IMAGE_SUFFIXES = frozenset(
+    {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff", ".tif", ".ico", ".svg"}
+)
+
+
+def _is_image_filename(name: str) -> bool:
+    return Path(name or "").suffix.lower() in _IMAGE_SUFFIXES
 
 
 def _fingerprint(name: str, data: bytes) -> str:
@@ -110,23 +119,42 @@ def render_chat_composer_hub(
                 guardar_memoria_fn=guardar_memoria_fn,
             )
 
-    staged = st.session_state.staged_attachments
+    staged = list(st.session_state.staged_attachments)
     if staged:
         st.caption(t("hub_staged_hint"))
-        idx = 0
-        while idx < len(staged):
-            row_items = staged[idx : idx + 6]
-            row_cols = st.columns(len(row_items))
-            for col, item in zip(row_cols, row_items):
-                with col:
-                    short = item["name"] if len(item["name"]) <= 18 else item["name"][:15] + "…"
-                    if st.button(
-                        f"📎 {short} ✕",
-                        key=f"hub_chip_rm_{item['id']}",
-                        help=t("hub_remove_attachment"),
-                    ):
-                        st.session_state.staged_attachments = [
-                            x for x in st.session_state.staged_attachments if x["id"] != item["id"]
-                        ]
-                        st.rerun()
-            idx += 6
+        # Columnas con peso: chips agrupados a la izquierda; columna final absorbe el resto.
+        weights: list[int] = []
+        for item in staged:
+            name = item.get("name") or ""
+            if _is_image_filename(name):
+                weights.append(16)
+            else:
+                weights.append(max(7, min(14, 5 + len(name) // 5)))
+        weights.append(480)
+        cols = st.columns(weights)
+        for i, item in enumerate(staged):
+            with cols[i]:
+                if _is_image_filename(item.get("name") or ""):
+                    try:
+                        st.image(
+                            io.BytesIO(item["data"]),
+                            width=56,
+                            use_container_width=False,
+                        )
+                    except Exception:
+                        st.caption("🖼")
+                nm = item.get("name") or "—"
+                short = nm if len(nm) <= 24 else nm[:21] + "…"
+                st.caption(short)
+                if st.button(
+                    "✕",
+                    key=f"hub_chip_rm_{item['id']}",
+                    help=t("hub_remove_attachment"),
+                    type="secondary",
+                ):
+                    st.session_state.staged_attachments = [
+                        x for x in st.session_state.staged_attachments if x["id"] != item["id"]
+                    ]
+                    st.rerun()
+        with cols[len(staged)]:
+            st.empty()
