@@ -11,6 +11,7 @@ import streamlit as st
 import extra_streamlit_components as stx
 
 from src.core.auth_cookies import set_auth_cookie
+from src.core.i18n import t
 
 
 def init_cookie_manager():
@@ -35,7 +36,7 @@ def check_idle_timeout(cookie_manager, clear_remember_token_fn) -> None:
         clear_remember_token_fn(st.session_state.user_id)
         for k in list(st.session_state.keys()):
             del st.session_state[k]
-        st.warning("Tu sesión ha expirado por inactividad. Inicia sesión nuevamente.")
+        st.warning(t("session_idle_expired"))
         st.rerun()
 
     st.session_state.last_activity_ts = now_ts

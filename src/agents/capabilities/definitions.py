@@ -124,6 +124,7 @@ CAPABILITY_PROFILES: dict[str, AgentCapabilityProfile] = {
         supported_models=("gemini", "groq", "openrouter", "ollama", "custom"),
         prompt_profile="security_engineer",
         max_tool_iterations=4,
+        preferred_model="gemini",
     ),
     "devops_engineer": AgentCapabilityProfile(
         role_key="devops_engineer",
@@ -138,6 +139,7 @@ CAPABILITY_PROFILES: dict[str, AgentCapabilityProfile] = {
         supported_models=("gemini", "groq", "openrouter", "ollama", "custom"),
         prompt_profile="devops_engineer",
         max_tool_iterations=4,
+        preferred_model="groq",
     ),
     "research_agent": AgentCapabilityProfile(
         role_key="research_agent",
@@ -152,6 +154,7 @@ CAPABILITY_PROFILES: dict[str, AgentCapabilityProfile] = {
         supported_models=("gemini", "groq", "openrouter", "ollama", "custom"),
         prompt_profile="research_agent",
         max_tool_iterations=5,
+        preferred_model="gemini",
     ),
     "multimedia_agent": AgentCapabilityProfile(
         role_key="multimedia_agent",
@@ -167,6 +170,7 @@ CAPABILITY_PROFILES: dict[str, AgentCapabilityProfile] = {
         supported_models=("gemini", "groq", "openrouter", "ollama", "custom"),
         prompt_profile="multimedia_agent",
         max_tool_iterations=3,
+        preferred_model="gemini",
     ),
 }
 

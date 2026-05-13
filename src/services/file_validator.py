@@ -91,16 +91,20 @@ def get_upload_policy() -> str:
 
 def get_upload_policy_summary() -> str:
     """Human-readable policy summary for UI captions."""
+    from src.core.i18n import t
+
     if get_upload_policy() == "permissive":
-        return "Subida abierta (modo pruebas): formatos no ejecutables y validación de seguridad básica."
+        return t("upload_policy_permissive")
     max_doc_mb = MAX_DOC_BYTES // (1024 * 1024)
     max_img_mb = MAX_IMAGE_BYTES // (1024 * 1024)
     max_video_mb = MAX_VIDEO_BYTES // (1024 * 1024)
     max_audio_mb = MAX_AUDIO_BYTES // (1024 * 1024)
-    return (
-        "Política segura activa: "
-        f"documentos hasta {max_doc_mb} MB | imágenes hasta {max_img_mb} MB | "
-        f"vídeos hasta {max_video_mb} MB | audio hasta {max_audio_mb} MB."
+    return t(
+        "upload_policy_strict",
+        doc_mb=max_doc_mb,
+        img_mb=max_img_mb,
+        video_mb=max_video_mb,
+        audio_mb=max_audio_mb,
     )
 
 
@@ -125,6 +129,8 @@ def _max_size_for_group(group: str) -> int:
 
 
 def _check_zip_bomb(raw: bytes) -> ValidationResult:
+    from src.core.i18n import t
+
     if not raw.startswith(b"PK"):
         return ValidationResult(ok=True)
     try:
@@ -133,10 +139,10 @@ def _check_zip_bomb(raw: bytes) -> ValidationResult:
         total_compressed = sum(i.compress_size for i in zf.infolist()) or 1
         ratio = total_uncompressed / total_compressed
         if total_uncompressed > 250 * 1024 * 1024 or ratio > 100:
-            return ValidationResult(ok=False, reason="ZIP sospechoso: posible zip bomb.")
+            return ValidationResult(ok=False, reason=t("upload_err_zip_bomb"))
         return ValidationResult(ok=True)
     except zipfile.BadZipFile:
-        return ValidationResult(ok=False, reason="Archivo ZIP corrupto.")
+        return ValidationResult(ok=False, reason=t("upload_err_zip_corrupt"))
 
 
 def _detect_magic_type(raw: bytes) -> str:
@@ -183,26 +189,28 @@ def _matches_expected_type(ext: str, detected: str) -> bool:
 
 def validate_uploaded_file(filename: str, raw_bytes: bytes) -> ValidationResult:
     """Validates extension, size and payload security according to active policy."""
+    from src.core.i18n import t
+
     if not filename or raw_bytes is None:
-        return ValidationResult(ok=False, reason="Archivo inválido.")
+        return ValidationResult(ok=False, reason=t("upload_err_invalid_file"))
     ext = Path(filename).suffix.lower()
     if ext in BLOCKED_EXTS:
-        return ValidationResult(ok=False, reason=f"Extensión bloqueada por seguridad: {ext}")
+        return ValidationResult(ok=False, reason=t("upload_err_ext_blocked", ext=ext))
     policy = get_upload_policy()
     allowed_exts = IMAGE_EXTS | VIDEO_EXTS | AUDIO_EXTS | DOC_EXTS
 
     if policy == "strict":
         if ext not in allowed_exts:
-            return ValidationResult(ok=False, reason=f"Extensión no permitida: {ext}")
+            return ValidationResult(ok=False, reason=t("upload_err_ext_not_allowed", ext=ext))
         group = _guess_group(ext)
         max_size = _max_size_for_group(group)
         if len(raw_bytes) > max_size:
             max_mb = max_size // (1024 * 1024)
-            return ValidationResult(ok=False, reason=f"Archivo excede límite para {group} ({max_mb}MB).")
+            return ValidationResult(ok=False, reason=t("upload_err_size", group=group, max_mb=max_mb))
 
     detected = _detect_magic_type(raw_bytes)
     if not _matches_expected_type(ext, detected):
-        return ValidationResult(ok=False, reason="MIME real no coincide con la extensión declarada.")
+        return ValidationResult(ok=False, reason=t("upload_err_mime_mismatch"))
 
     bomb_check = _check_zip_bomb(raw_bytes)
     if not bomb_check.ok:

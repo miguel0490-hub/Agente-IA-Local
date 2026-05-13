@@ -12,6 +12,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Generator
 
+from src.core.i18n import t
 from src.core.logger import get_logger
 
 logger = get_logger(__name__)
@@ -181,13 +182,13 @@ class ModelFallbackChain:
 
                 fallback = self.get_fallback(provider_name, api_keys, tried)
                 if not fallback:
-                    yield f"\n\n❌ Todos los proveedores fallaron. Último error: {e}"
+                    yield t("mf_all_failed", error=e)
                     return
 
-                yield f"\n\n⚠️ {provider_name} no disponible. Cambiando a {fallback.name}...\n\n"
+                yield t("mf_switching", provider=provider_name, fallback=fallback.name)
                 current_motor = fallback.motor_key
 
-        yield "\n\n❌ Se agotaron todos los intentos de proveedores disponibles."
+        yield t("mf_exhausted")
 
     def _extract_provider_name(self, motor_name: str) -> str:
         """Extracts the provider name from a motor display name."""

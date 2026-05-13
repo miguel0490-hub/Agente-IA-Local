@@ -158,9 +158,9 @@ def _render_action_buttons(user: dict, is_self: bool) -> None:
             if new_pw and len(new_pw) >= 4:
                 ok, msg = admin_reset_password(uid, new_pw)
                 if ok:
-                    st.success(msg)
+                    st.success(t(msg))
                 else:
-                    st.error(msg)
+                    st.error(t(msg))
             else:
                 st.warning(t("admin_min_chars"))
 
@@ -242,7 +242,7 @@ def _render_contact_messages() -> None:
             )
             st.markdown(
                 f'<p style="color:#94A3B8;font-size:0.85rem;margin:0 0 8px;">'
-                f'De: <strong style="color:#F8FAFC;">@{_esc(msg["username"])}</strong> '
+                f'{t("admin_contact_from")} <strong style="color:#F8FAFC;">@{_esc(msg["username"])}</strong> '
                 f'({_esc(msg["first_name"])} {_esc(msg["last_name"])}) — '
                 f'{_esc(msg["email"])} — {date_str} — {status_label}</p>',
                 unsafe_allow_html=True,

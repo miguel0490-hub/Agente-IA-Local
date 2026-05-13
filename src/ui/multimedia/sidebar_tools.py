@@ -26,14 +26,21 @@ def render_multimedia_sidebar_tools(
             result = status.get("result") or {}
             if result.get("ok"):
                 text = (result.get("text") or "").strip()
-                st.success("✅ Transcripción asíncrona completada.")
-                st.session_state.messages.append({"role": "user", "content": f"🎙️ *(Audio transcrito)*:\n{text}"})
+                st.success(t("mm_stt_async_ok"))
+                st.session_state.messages.append(
+                    {"role": "user", "content": t("mm_audio_transcript_user", text=text)}
+                )
                 if st.session_state.chat_id:
                     guardar_memoria_fn(st.session_state.chat_id, st.session_state.messages, st.session_state.api_keys)
             else:
-                st.error(result.get("error") or "❌ Falló la transcripción asíncrona.")
+                st.error(result.get("error") or t("mm_stt_async_fail"))
         elif status["status"] == "failed":
-            st.error(f"❌ Job de transcripción falló: {status.get('error') or 'error desconocido'}")
+            st.error(
+                t(
+                    "mm_stt_job_fail",
+                    detail=status.get("error") or t("mm_stt_unknown_error"),
+                )
+            )
         else:
             remaining_stt_jobs.append(job)
     st.session_state.pending_stt_jobs = remaining_stt_jobs
@@ -52,9 +59,9 @@ def render_multimedia_sidebar_tools(
             key=f"uploader_stt_{st.session_state.form_clear_counter}",
         )
         if get_upload_policy() == "permissive":
-            st.caption("Modo pruebas: transcripción con subida abierta para audio/vídeo (no ejecutables).")
+            st.caption(t("mm_stt_permissive_caption"))
         else:
-            st.caption("Límite para transcripción: audio/vídeo hasta 100 MB.")
+            st.caption(t("mm_stt_limit_caption"))
         if audio_stt:
             if not check_scoped_rate_limit(str(st.session_state.user_id), scope="uploads"):
                 st.error(t("upload_rate_limit"))
@@ -68,11 +75,11 @@ def render_multimedia_sidebar_tools(
         if audio_stt:
             st.audio(audio_stt, format=f"audio/{audio_stt.name.split('.')[-1]}")
             if st.button(t("multimedia_stt_button"), use_container_width=True, key="btn_stt"):
-                with st.spinner("Enviando a Groq Whisper… ⚡"):
+                with st.spinner(t("mm_stt_spinner")):
                     groq_key = st.session_state.api_keys.get("GROQ_API_KEY", "")
                     job_id = enqueue_transcription(audio_stt.getvalue(), audio_stt.name, groq_key)
                     if job_id:
-                        st.toast("🧵 Transcripción encolada en segundo plano.", icon="🧵")
+                        st.toast(t("mm_stt_queued_toast"), icon="🧵")
                         st.session_state.pending_stt_jobs.append({"job_id": job_id, "filename": audio_stt.name})
                         st.session_state.form_clear_counter += 1
                         st.rerun()
@@ -84,11 +91,11 @@ def render_multimedia_sidebar_tools(
                     if error_stt:
                         st.error(error_stt)
                     else:
-                        st.toast("✅ Transcripción completada", icon="✅")
+                        st.toast(t("mm_stt_done_toast"), icon="✅")
                         st.session_state.messages.append(
                             {
                                 "role": "user",
-                                "content": f"🎙️ *(Audio transcrito)*:\n{texto_transcrito}",
+                                "content": t("mm_audio_transcript_user", text=texto_transcrito),
                             }
                         )
                         if st.session_state.chat_id:
@@ -108,7 +115,7 @@ def render_multimedia_sidebar_tools(
         with col_voice:
             if prov_tts_sel == t("multimedia_tts_openai"):
                 voz_seleccionada = st.selectbox(
-                    "Voz:",
+                    t("mm_tts_voice_label"),
                     ["alloy", "echo", "fable", "onyx", "nova", "shimmer"],
                     index=0,
                     key="tts_voice_selector",
@@ -130,11 +137,10 @@ def render_multimedia_sidebar_tools(
                 st.warning(t("multimedia_tts_empty"))
             elif len(texto_para_tts) > 4096:
                 st.warning(
-                    f"⚠️ El texto es demasiado largo ({len(texto_para_tts)}/4096 caracteres). "
-                    "Por favor, recórtalo para poder generar el audio."
+                    t("mm_tts_text_too_long", n=len(texto_para_tts)),
                 )
             else:
-                with st.spinner(f"Sintetizando con {prov_tts_sel}…"):
+                with st.spinner(t("mm_tts_spinner", provider=prov_tts_sel)):
                     if prov_tts_sel == t("multimedia_tts_openai"):
                         proveedor_tts = get_openai_tts_provider_fn(voice=voz_seleccionada)
                     else:
@@ -144,11 +150,14 @@ def render_multimedia_sidebar_tools(
                 if error_tts:
                     st.error(error_tts)
                 else:
-                    st.toast("✅ ¡Audio generado!", icon="✅")
+                    st.toast(t("mm_tts_toast_ok"), icon="✅")
                     st.session_state.messages.append(
                         {
                             "role": "assistant",
-                            "content": f"🔊 *Audio sintetizado:* '{texto_para_tts[:50]}...'",
+                            "content": t(
+                                "mm_tts_assistant_line",
+                                preview=texto_para_tts[:50],
+                            ),
                             "audio_path": audio_filepath,
                         }
                     )
@@ -168,8 +177,8 @@ def render_multimedia_sidebar_tools(
             key="img_provider_radio",
         )
         prompt_imagen_gen = st.text_area(
-            "Prompt:",
-            placeholder="Ej: A futuristic robot reading a book…",
+            t("mm_img_prompt_label"),
+            placeholder=t("mm_img_prompt_placeholder"),
             height=80,
             key=f"img_gen_prompt_{st.session_state.form_clear_counter}",
         )
@@ -181,12 +190,12 @@ def render_multimedia_sidebar_tools(
                 st.selectbox(t("multimedia_image_quality"), ["standard", "hd"], key="dalle_quality")
         else:
             st.selectbox(t("multimedia_image_ratio"), ["1:1", "16:9", "9:16", "3:2", "2:3", "4:5", "5:4"], key="stability_aspect")
-            st.text_input(t("multimedia_image_negative"), placeholder="Ej: blurry, low quality", key="stability_negative")
+            st.text_input(t("multimedia_image_negative"), placeholder=t("mm_img_negative_placeholder"), key="stability_negative")
         if st.button(t("multimedia_image_button"), use_container_width=True, key="btn_img_gen"):
             if not prompt_imagen_gen.strip():
                 st.warning(t("multimedia_image_empty"))
             else:
-                with st.spinner(f"Generando con {proveedor_imagen_sel}…"):
+                with st.spinner(t("mm_img_spinner", provider=proveedor_imagen_sel)):
                     from src.services.image_gen_service import generate_image
 
                     if proveedor_imagen_sel == "OpenAI DALL-E 3":
@@ -209,11 +218,15 @@ def render_multimedia_sidebar_tools(
                 if error_gen:
                     st.error(error_gen)
                 else:
-                    st.toast("✅ ¡Imagen generada!", icon="✅")
+                    st.toast(t("mm_img_toast_ok"), icon="✅")
                     st.session_state.messages.append(
                         {
                             "role": "assistant",
-                            "content": f"🎨 *Asset generado con {proveedor_imagen_sel}:* '{prompt_imagen_gen}'",
+                            "content": t(
+                                "mm_img_assistant_line",
+                                provider=proveedor_imagen_sel,
+                                prompt=prompt_imagen_gen,
+                            ),
                             "image_path": filepath_gen,
                         }
                     )

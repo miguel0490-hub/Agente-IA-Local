@@ -338,11 +338,11 @@ def register_user(first_name, last_name, email, username, password):
     except IntegrityError as e:
         err = str(e).lower()
         if "email" in err:
-            return False, "El correo electrónico ya está registrado."
-        return False, "El nombre de usuario ya existe."
+            return False, "auth_email_taken"
+        return False, "auth_username_taken"
     except Exception as e:
         logger.error(f"Error registrando usuario '{username}': {e}")
-        return False, "No se pudo completar el registro."
+        return False, "auth_register_failed"
 
 
 def verify_user_token(token):
@@ -377,11 +377,11 @@ def verify_login(username, password):
     if row:
         if bcrypt.checkpw(password.encode("utf-8"), row._mapping["password_hash"].encode("utf-8")):
             if row._mapping.get("is_active", 1) == 0:
-                return False, "Tu cuenta ha sido suspendida. Contacta al administrador."
+                return False, "auth_account_suspended"
             if row._mapping["is_verified"] == 0:
-                return False, "Tu cuenta no está verificada. Por favor, revisa tu correo electrónico para activarla."
+                return False, "auth_not_verified"
             return True, row._mapping["id"]
-    return False, "Usuario o contraseña incorrectos."
+    return False, "auth_bad_credentials"
 
 
 def get_user_profile(user_id):
@@ -400,15 +400,15 @@ def change_user_password(user_id, old_password, new_password):
             {"user_id": user_id},
         ).fetchone()
         if not row:
-            return False, "Usuario no encontrado."
+            return False, "auth_user_not_found"
         if not bcrypt.checkpw(old_password.encode("utf-8"), row._mapping["password_hash"].encode("utf-8")):
-            return False, "La contraseña actual es incorrecta."
+            return False, "auth_wrong_password"
         hashed = bcrypt.hashpw(new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
         conn.execute(
             text("UPDATE users SET password_hash = :password_hash WHERE id = :user_id"),
             {"password_hash": hashed, "user_id": user_id},
         )
-        return True, "Contraseña actualizada con éxito."
+        return True, "auth_password_changed"
 
 
 def update_api_keys(user_id, api_keys_dict):
@@ -559,8 +559,8 @@ def admin_reset_password(user_id: int, new_password: str) -> tuple[bool, str]:
             {"pw": hashed, "uid": user_id},
         )
         if result.rowcount == 0:
-            return False, "Usuario no encontrado."
-    return True, "Contraseña reseteada con éxito."
+            return False, "auth_user_not_found"
+    return True, "auth_admin_reset_ok"
 
 
 # --- Contacto usuario → admin ---
@@ -640,7 +640,14 @@ def get_admin_emails() -> list[str]:
 
 
 # --- Chats y Mensajes ---
-def create_chat(user_id, title="Nuevo Chat"):
+def create_chat(user_id, title=None):
+    if title is None:
+        try:
+            from src.core.i18n import t
+
+            title = t("new_chat_title")
+        except Exception:
+            title = "New Chat"
     with engine.begin() as conn:
         if _is_postgres():
             chat_id = conn.execute(
@@ -854,7 +861,7 @@ def verify_reset_token(token):
 def update_password_with_token(token, new_password):
     success, user_id = verify_reset_token(token)
     if not success:
-        return False, "Token inválido o expirado."
+        return False, "auth_token_invalid"
 
     hashed = bcrypt.hashpw(new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
     with engine.begin() as conn:
@@ -865,4 +872,4 @@ def update_password_with_token(token, new_password):
             ),
             {"password_hash": hashed, "user_id": user_id},
         )
-    return True, "Contraseña actualizada con éxito."
+    return True, "auth_password_changed"

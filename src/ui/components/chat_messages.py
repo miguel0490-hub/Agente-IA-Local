@@ -7,7 +7,7 @@ import re
 
 import streamlit as st
 
-from src.core.i18n import t
+from src.core.i18n import TOOL_CONTEXT_PREFIX, t
 from src.core.sanitizer import sanitize_markdown_text
 
 _TOOL_ACTIONS = r"(?:create_file|edit_file|execute_code|query_rag|open_converter|search_web)"
@@ -29,17 +29,32 @@ def _clean_tool_json_from_display(text: str) -> str:
     return text.strip()
 
 
-_SKIP_PREFIXES = (
-    "RESULTADOS DE BÚSQUEDA PARA",
+_LEGACY_TOOL_PREFIXES = (
+    "RESULTADOS DE BÚSQUEDA",
     "RESULTADOS DEL CEREBRO RAG",
     "RESULTADO DE LA EJECUCIÓN",
     "INSTRUCCIONES POST-BÚSQUEDA",
+    "WEB SEARCH RESULTS FOR",
+    "EXECUTION RESULT (STDOUT",
+    "RAG BRAIN RESULTS FOR",
+    "The RAG brain found no",
+    "RÉSULTATS RAG POUR",
+    "RAG-ERGEBNISSE FÜR",
+    "RESULTADOS RAG PARA",
+    "RÉSULTATS WEB POUR",
+    "WEBSUCHERGEBNISSE FÜR",
+    "RESULTADOS DA PESQUISA WEB PARA",
+    "RÉSULTAT D'EXÉCUTION",
+    "AUSFÜHRUNGSERGEBNIS",
+    "RESULTADO DA EXECUÇÃO",
 )
 
 
 def _is_internal_message(content: str) -> bool:
     """Returns True for system-internal messages that shouldn't be shown to the user."""
-    return any(content.startswith(p) for p in _SKIP_PREFIXES)
+    if content.startswith(TOOL_CONTEXT_PREFIX):
+        return True
+    return any(content.startswith(p) for p in _LEGACY_TOOL_PREFIXES)
 
 
 def render_chat_messages(messages: list, render_download_button_fn) -> None:

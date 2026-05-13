@@ -29,7 +29,7 @@ def render_onboarding_gate(update_api_keys_fn) -> None:
             st.markdown(t("onboarding_step1_title"))
             st.markdown(t("onboarding_step1_desc"))
             st.caption(t("onboarding_step1_caption"))
-            key = st.text_input("Gemini API Key", type="password", key="gemini_input")
+            key = st.text_input(t("onboarding_api_gemini"), type="password", key="gemini_input")
             c1, c2 = st.columns(2)
             with c1:
                 if st.button(t("onboarding_save_next"), type="primary", key="gemini_save", use_container_width=True):
@@ -47,7 +47,7 @@ def render_onboarding_gate(update_api_keys_fn) -> None:
             st.markdown(t("onboarding_step2_title"))
             st.markdown(t("onboarding_step2_desc"))
             st.caption(t("onboarding_step2_caption"))
-            key = st.text_input("Groq API Key", type="password", key="groq_input")
+            key = st.text_input(t("onboarding_api_groq"), type="password", key="groq_input")
             c1, c2 = st.columns(2)
             with c1:
                 if st.button(t("onboarding_save_next"), type="primary", key="groq_save", use_container_width=True):
@@ -65,7 +65,7 @@ def render_onboarding_gate(update_api_keys_fn) -> None:
             st.markdown(t("onboarding_step3_title"))
             st.markdown(t("onboarding_step3_desc"))
             st.caption(t("onboarding_step3_caption"))
-            key = st.text_input("OpenRouter API Key", type="password", key="or_input")
+            key = st.text_input(t("onboarding_api_openrouter"), type="password", key="or_input")
             c1, c2 = st.columns(2)
             with c1:
                 if st.button(t("onboarding_save_next"), type="primary", key="or_save", use_container_width=True):
@@ -83,7 +83,7 @@ def render_onboarding_gate(update_api_keys_fn) -> None:
             st.markdown(t("onboarding_step4_title"))
             st.markdown(t("onboarding_step4_desc"))
             st.caption(t("onboarding_step4_caption"))
-            key = st.text_input("OpenAI API Key", type="password", key="oai_input")
+            key = st.text_input(t("onboarding_api_openai"), type="password", key="oai_input")
             c1, c2 = st.columns(2)
             with c1:
                 if st.button(t("onboarding_save_next"), type="primary", key="oai_save", use_container_width=True):
@@ -101,7 +101,7 @@ def render_onboarding_gate(update_api_keys_fn) -> None:
             st.markdown(t("onboarding_step5_title"))
             st.markdown(t("onboarding_step5_desc"))
             st.caption(t("onboarding_step5_caption"))
-            key = st.text_input("Stability AI API Key", type="password", key="stab_input")
+            key = st.text_input(t("onboarding_api_stability"), type="password", key="stab_input")
             c1, c2 = st.columns(2)
             with c1:
                 if st.button(t("onboarding_save_next"), type="primary", key="stab_save", use_container_width=True):
@@ -122,7 +122,14 @@ def render_onboarding_gate(update_api_keys_fn) -> None:
             if st.session_state.temp_custom_models:
                 st.markdown(t("onboarding_models_registered"))
                 for cm in st.session_state.temp_custom_models:
-                    st.success(f"✅ {cm['name']} — `{cm['model_id']}` en `{cm['base_url']}`")
+                    st.success(
+                        t(
+                            "onboarding_model_registered_line",
+                            name=cm["name"],
+                            model_id=cm["model_id"],
+                            base_url=cm["base_url"],
+                        )
+                    )
                 st.divider()
 
             with st.form("custom_model_form", clear_on_submit=True):

@@ -28,12 +28,12 @@ def handle_auth_query_params(verify_user_token_fn, update_password_with_token_fn
                 if new_password and new_password == confirm_password:
                     success, msg = update_password_with_token_fn(reset_token, new_password)
                     if success:
-                        st.success(msg)
+                        st.success(t(msg))
                         st.query_params.clear()
                         time.sleep(2)
                         st.rerun()
                     else:
-                        st.error(msg)
+                        st.error(t(msg))
                 else:
                     st.error(t("passwords_empty_mismatch"))
         st.stop()

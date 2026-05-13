@@ -14,6 +14,7 @@ import re
 import requests
 
 from src.core.config import CARPETA_IMAGENES, PROMPT_TECH_LEAD
+from src.core.i18n import t
 
 
 def _lazy_ggenai():
@@ -55,13 +56,7 @@ def _env_float(name: str, default: float) -> float:
 
 
 def _continuation_prompt() -> str:
-    return (
-        "Tu respuesta anterior fue cortada por el límite de tokens. "
-        "Continúa EXACTAMENTE desde donde te quedaste, sin repetir contenido, "
-        "manteniendo el mismo formato, estructura y contexto. "
-        "Si estabas generando un bloque JSON con HTML, retoma el HTML desde la última línea emitida "
-        "y cierra correctamente todas las etiquetas y el JSON al final."
-    )
+    return t("llm_continuation_prompt")
 
 
 def _clean_model_noise(text: str) -> str:
@@ -69,6 +64,46 @@ def _clean_model_noise(text: str) -> str:
         return ""
     # Limpia prefijos de rol residuales frecuentes de modelos.
     return re.sub(r"(?im)^\s*(agt|agent|assistant|asistente)\s*:\s*", "", text)
+
+
+# Sufijo añadido al compactar system prompts en APIs tipo OpenAI (Groq, OpenRouter,
+# Ollama, endpoint personalizado). Sin esto, un recorte largo borra query_rag y el
+# Cerebro RAG deja de usarse.
+def _tool_calling_preserved_suffix() -> str:
+    return t("llm_tool_preserved_suffix")
+
+
+def compact_system_prompt_preserving_tool_docs(prompt: str, max_chars: int) -> str:
+    """Recorta el system prompt conservando instrucciones de herramientas (RAG, web, archivos).
+
+    Si ``max_chars`` es <= 0 o el texto ya cabe, no modifica nada. Usado por Groq por
+    defecto y de forma opt-in en otros proveedores vía variables de entorno
+    (p. ej. ``OPENROUTER_SYSTEM_PROMPT_MAX_CHARS``).
+    """
+    if max_chars <= 0 or len(prompt) <= max_chars:
+        return prompt
+    suffix = _tool_calling_preserved_suffix()
+    budget = max(400, max_chars - len(suffix))
+    cut_markers = [
+        "=== REGLAS PARA GENERACIÓN DE DOCUMENTOS PDF",
+        "=== REGLAS PARA GENERACIÓN DE TABLAS",
+        "=== HERRAMIENTA: CONVERSOR",
+        "=== HERRAMIENTA: EDITOR",
+    ]
+    trimmed = prompt
+    for marker in cut_markers:
+        idx = trimmed.find(marker)
+        if idx != -1:
+            trimmed = trimmed[:idx].rstrip()
+    if len(trimmed) > budget:
+        trimmed = trimmed[:budget].rsplit("\n", 1)[0]
+    return trimmed + suffix
+
+
+def _apply_optional_system_compact(system_instruction: str | None, env_name: str, default_max: int) -> str:
+    """Aplica :func:`compact_system_prompt_preserving_tool_docs` según entorno (0 = desactivado)."""
+    base = system_instruction or PROMPT_TECH_LEAD
+    return compact_system_prompt_preserving_tool_docs(base, _env_int(env_name, default_max))
 
 
 class LLMProvider:
@@ -86,7 +121,7 @@ class GeminiProvider(LLMProvider):
     """Proveedor Google Gemini con soporte multimodal (texto + imagen) y streaming."""
     def stream_chat(self, carga_util, historial=None, system_instruction: str = None):
         if not self.api_key:
-            yield "❌ Funcionalidad omitida durante el onboarding por falta de clave (Gemini). Por favor, actualiza tu perfil."
+            yield t("llm_onboarding_missing_gemini")
             return
             
         try:
@@ -151,7 +186,7 @@ class GeminiProvider(LLMProvider):
             raise
             
     def generar_imagen(self, prompt_artistico: str):
-        if not self.api_key: return None, "❌ Funcionalidad omitida durante el onboarding por falta de clave (Gemini). Por favor, actualiza tu perfil."
+        if not self.api_key: return None, t("llm_onboarding_missing_gemini")
         try:
             ggenai = _lazy_ggenai()
             types = _lazy_types()
@@ -179,51 +214,22 @@ class GeminiProvider(LLMProvider):
                     
                 return final_path, None 
             else:
-                return None, "⚠️ La IA no devolvió una imagen."
+                return None, t("llm_gemini_no_image")
                 
         except Exception as e:
-            return None, f"❌ Error crítico en Generador de Arte: {e}"
+            return None, t("llm_art_error", error=e)
 
 
 class GroqProvider(LLMProvider):
     """Proveedor Groq con soporte de streaming sobre modelos LLaMA de alta velocidad."""
 
+    @staticmethod
+    def _minimal_system_content() -> str:
+        return t("groq_minimal_system_prompt")
+
     def __init__(self, api_key=None, model="llama-3.3-70b-versatile"):
         super().__init__(api_key)
         self.model = model
-
-    _MINIMAL_SYSTEM_PROMPT = (
-        "Eres un asistente técnico experto. Responde de forma clara y concisa en español. "
-        "Si el usuario pide un archivo, responde con JSON: "
-        '{"action":"create_file","filename":"nombre.ext","content":"..."}. '
-        "Para búsquedas web: "
-        '{"action":"search_web","query":"..."}. '
-        "No generes archivos a menos que se pida explícitamente."
-    )
-
-    @staticmethod
-    def _compact_system_prompt(prompt: str, max_chars: int = 3000) -> str:
-        """Trims the system prompt to stay within Groq's tight TPM limits."""
-        if len(prompt) <= max_chars:
-            return prompt
-        cut_markers = [
-            "=== REGLAS PARA GENERACIÓN DE DOCUMENTOS PDF",
-            "=== REGLAS PARA GENERACIÓN DE TABLAS",
-            "=== HERRAMIENTA: CONVERSOR",
-            "=== HERRAMIENTA: EDITOR",
-        ]
-        trimmed = prompt
-        for marker in cut_markers:
-            idx = trimmed.find(marker)
-            if idx != -1:
-                trimmed = trimmed[:idx].rstrip()
-        if len(trimmed) > max_chars:
-            trimmed = trimmed[:max_chars].rsplit("\n", 1)[0]
-        trimmed += (
-            "\n\nNOTA: Si el usuario pide un PDF, tabla o documento, usa create_file "
-            "con el formato JSON habitual. Responde en texto plano para preguntas normales."
-        )
-        return trimmed
 
     @staticmethod
     def _trim_history(mensajes: list, keep_last: int = 4) -> list:
@@ -266,13 +272,15 @@ class GroqProvider(LLMProvider):
 
     def stream_chat(self, mensaje: str, historial: list, system_instruction: str = None):
         if not self.api_key:
-            yield "❌ Funcionalidad omitida durante el onboarding por falta de clave (Groq). Por favor, actualiza tu perfil."
+            yield t("llm_onboarding_missing_groq")
             return
 
         try:
             Groq = _lazy_groq()
             cliente = Groq(api_key=self.api_key)
-            sys_prompt = self._compact_system_prompt(system_instruction or PROMPT_TECH_LEAD)
+            sys_prompt = _apply_optional_system_compact(
+                system_instruction, "GROQ_SYSTEM_PROMPT_MAX_CHARS", 3000
+            )
             mensajes = [{"role": "system", "content": sys_prompt}]
             for m in historial:
                 if m.get("content"):
@@ -299,7 +307,7 @@ class GroqProvider(LLMProvider):
                             msgs = mensajes
                         else:
                             trimmed = self._trim_history(mensajes)
-                            trimmed[0] = {"role": "system", "content": self._MINIMAL_SYSTEM_PROMPT}
+                            trimmed[0] = {"role": "system", "content": self._minimal_system_content()}
                             msgs = trimmed
                         for chunk in self._attempt_stream(
                             cliente, model_name, msgs, max_tokens, temperature, max_rounds
@@ -328,7 +336,7 @@ class OpenRouterProvider(LLMProvider):
     """Proveedor OpenRouter: acceso unificado a múltiples LLMs vía API compatible con OpenAI."""
     def stream_chat(self, mensaje: str, historial: list, system_instruction: str = None):
         if not self.api_key:
-            yield "❌ Funcionalidad omitida durante el onboarding por falta de clave (OpenRouter). Por favor, actualiza tu perfil."
+            yield t("llm_onboarding_missing_openrouter")
             return
 
         try:
@@ -341,7 +349,10 @@ class OpenRouterProvider(LLMProvider):
                     "X-Title": "SuperAgente IA Pro"
                 }
             )
-            mensajes = [{"role": "system", "content": system_instruction or PROMPT_TECH_LEAD}]
+            sys_content = _apply_optional_system_compact(
+                system_instruction, "OPENROUTER_SYSTEM_PROMPT_MAX_CHARS", 0
+            )
+            mensajes = [{"role": "system", "content": sys_content}]
             for m in historial:
                 if m.get("content"):
                     mensajes.append({"role": m["role"], "content": m["content"]})
@@ -391,7 +402,7 @@ class OpenRouterProvider(LLMProvider):
 
             raise last_error if last_error else RuntimeError("No se pudo inicializar OpenRouter.")
         except Exception as e:
-            yield f"\n\n❌ Error OpenRouter: {e}"
+            yield t("llm_openrouter_error", error=e)
 
 
 class OllamaProvider(LLMProvider):
@@ -405,7 +416,7 @@ class OllamaProvider(LLMProvider):
             from src.security.url_validator import validate_url
             result = validate_url(self.base_url, context="ollama_base_url")
             if not result.safe:
-                raise ValueError(f"URL Ollama bloqueada: {result.reason}")
+            raise ValueError(t("error_ollama_url_blocked", reason=result.reason))
 
     def stream_chat(self, mensaje: str, historial: list, system_instruction: str = None):
         try:
@@ -416,7 +427,10 @@ class OllamaProvider(LLMProvider):
                 base_url=self.base_url,
                 timeout=httpx.Timeout(connect=10.0, read=120.0, write=10.0, pool=10.0),
             )
-            mensajes = [{"role": "system", "content": system_instruction or PROMPT_TECH_LEAD}]
+            sys_content = _apply_optional_system_compact(
+                system_instruction, "OLLAMA_SYSTEM_PROMPT_MAX_CHARS", 0
+            )
+            mensajes = [{"role": "system", "content": sys_content}]
             for m in historial:
                 if m.get("content"):
                     mensajes.append({"role": m["role"], "content": m["content"]})
@@ -453,7 +467,7 @@ class OllamaProvider(LLMProvider):
                 convo_messages.append({"role": "assistant", "content": full_round})
                 convo_messages.append({"role": "user", "content": _continuation_prompt()})
         except Exception as e:
-            yield f"\n\n❌ Error Ollama: {e}"
+            yield t("llm_ollama_error", error=e)
 
 
 class CustomOpenAIProvider(LLMProvider):
@@ -474,14 +488,14 @@ class CustomOpenAIProvider(LLMProvider):
         from src.security.url_validator import validate_url
         result = validate_url(self.base_url, context="custom_openai_base_url")
         if not result.safe:
-            raise ValueError(f"URL bloqueada por política SSRF: {result.reason}")
+            raise ValueError(t("error_url_blocked_ssrf", reason=result.reason))
 
     def stream_chat(self, mensaje: str, historial: list, system_instruction: str = None):
         if not self.api_key:
-            yield f"❌ No se configuró API Key para el modelo personalizado '{self.model_name}'."
+            yield t("llm_custom_no_api_key", model=self.model_name)
             return
         if not self.base_url:
-            yield f"❌ No se configuró URL Base para el modelo personalizado '{self.model_name}'."
+            yield t("llm_custom_no_base_url", model=self.model_name)
             return
 
         try:
@@ -492,7 +506,10 @@ class CustomOpenAIProvider(LLMProvider):
                 base_url=self.base_url,
                 timeout=httpx.Timeout(connect=10.0, read=120.0, write=10.0, pool=10.0),
             )
-            mensajes = [{"role": "system", "content": system_instruction or PROMPT_TECH_LEAD}]
+            sys_content = _apply_optional_system_compact(
+                system_instruction, "CUSTOM_OPENAI_SYSTEM_PROMPT_MAX_CHARS", 0
+            )
+            mensajes = [{"role": "system", "content": sys_content}]
             for m in historial:
                 if m.get("content"):
                     mensajes.append({"role": m["role"], "content": m["content"]})
@@ -535,9 +552,9 @@ class CustomOpenAIProvider(LLMProvider):
         except Exception as e:
             error_str = str(e)
             if "402" in error_str or "Insufficient Balance" in error_str:
-                yield f"\n\n⚠️ Error 402: No tienes saldo suficiente en este proveedor. Por favor, recarga tu cuenta en su sitio oficial."
+                yield t("llm_custom_402")
             else:
-                yield f"\n\n❌ Error en modelo personalizado '{self.model_name}': {e}"
+                yield t("llm_custom_error", model=self.model_name, error=e)
 
 
 class GroqWhisperProvider:
@@ -548,7 +565,7 @@ class GroqWhisperProvider:
 
     def transcribe(self, audio_bytes: bytes, filename: str = "audio.webm") -> tuple[str, str | None]:
         if not self.api_key:
-            return "", "❌ Funcionalidad omitida durante el onboarding por falta de clave (Groq Whisper). Por favor, actualiza tu perfil."
+            return "", t("llm_whisper_no_key")
         from src.services.audio_service import transcribe_audio_with_groq
         return transcribe_audio_with_groq(audio_bytes, self.api_key, filename)
 
@@ -564,7 +581,7 @@ class OpenAITTSProvider:
 
     def synthesize(self, text: str) -> tuple[bytes | None, str | None, str | None]:
         if not self.api_key:
-            return None, None, "❌ Funcionalidad omitida durante el onboarding por falta de clave (OpenAI TTS). Por favor, actualiza tu perfil."
+            return None, None, t("llm_tts_no_key")
         from src.services.audio_service import synthesize_speech_with_openai
         return synthesize_speech_with_openai(text, self.api_key, voice=self.voice)
 

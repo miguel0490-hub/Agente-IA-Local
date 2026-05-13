@@ -56,7 +56,14 @@ def create_dialogs(
         render_converter_dialog(carpeta_imagenes, secure_upload_check_fn, run_conversion_fn, guardar_memoria_fn)
 
     def get_roles():
-        return get_ui_roles(prompt_tech_lead, prompt_app_builder, prompt_ui_designer)
+        from src.core.i18n import get_language
+
+        return get_ui_roles(
+            prompt_tech_lead,
+            prompt_app_builder,
+            prompt_ui_designer,
+            get_language(),
+        )
 
     def cambiar_rol():
         apply_role_change(guardar_memoria_fn)

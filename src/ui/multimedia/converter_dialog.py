@@ -23,20 +23,25 @@ def render_converter_dialog(carpeta_imagenes: str, secure_upload_check, run_conv
             result = status.get("result") or {}
             if result.get("ok") and result.get("output_path"):
                 out = result["output_path"]
-                st.success(f"✅ Conversión completada ({job.get('filename')}).")
+                st.success(t("conv_async_ok", filename=job.get("filename")))
                 st.session_state.messages.append(
                     {
                         "role": "assistant",
-                        "content": f"🔄 *Conversión asíncrona completada:* `{job.get('filename')}`",
+                        "content": t("conv_chat_async_line", filename=job.get("filename")),
                         "file_paths": [out],
                     }
                 )
                 if st.session_state.chat_id:
                     guardar_memoria_fn(st.session_state.chat_id, st.session_state.messages, st.session_state.api_keys)
             else:
-                st.error(f"❌ Conversión asíncrona fallida ({job.get('filename')}).")
+                st.error(t("conv_async_fail", filename=job.get("filename")))
         elif status["status"] == "failed":
-            st.error(f"❌ Job de conversión falló: {status.get('error') or 'error desconocido'}")
+            st.error(
+                t(
+                    "conv_job_fail",
+                    detail=status.get("error") or t("conv_unknown_error"),
+                )
+            )
         else:
             remaining_jobs.append(job)
     st.session_state.pending_conversion_jobs = remaining_jobs
@@ -60,7 +65,7 @@ def render_converter_dialog(carpeta_imagenes: str, secure_upload_check, run_conv
         if st.button(t("converter_button"), use_container_width=True):
             if formato_destino:
                 formato_destino = formato_destino.strip().replace(".", "")
-                with st.spinner(f"Convirtiendo a .{formato_destino} (Aceleración Local)..."):
+                with st.spinner(t("conv_spinner", fmt=formato_destino)):
                     os.makedirs("data/temp", exist_ok=True)
                     input_ext = os.path.splitext(archivo_conv.name)[1]
                     temp_input = f"data/temp/in_{uuid.uuid4().hex[:8]}{input_ext}"
@@ -72,7 +77,7 @@ def render_converter_dialog(carpeta_imagenes: str, secure_upload_check, run_conv
 
                     job_id = enqueue_conversion(temp_input, temp_output)
                     if job_id:
-                        st.toast("🧵 Conversión encolada en segundo plano.", icon="🧵")
+                        st.toast(t("conv_queued_toast"), icon="🧵")
                         st.session_state.pending_conversion_jobs.append({"job_id": job_id, "filename": output_name})
                         st.session_state.form_clear_counter += 1
                         st.rerun()
@@ -83,7 +88,7 @@ def render_converter_dialog(carpeta_imagenes: str, secure_upload_check, run_conv
                         st.session_state.messages.append(
                             {
                                 "role": "assistant",
-                                "content": f"🔄 *Archivo convertido a `.{formato_destino}` exitosamente.*",
+                                "content": t("conv_chat_sync_line", fmt=formato_destino),
                                 "file_paths": [temp_output],
                             }
                         )

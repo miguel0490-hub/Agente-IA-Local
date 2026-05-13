@@ -7,8 +7,39 @@ import uuid as _uuid
 
 import streamlit as st
 
-from src.core.i18n import t
+from src.core.i18n import TOOL_CONTEXT_PREFIX, all_locale_values_for_key, t
 from src.core.sanitizer import sanitize_markdown_text
+
+# User may type in any language; match file-generation intent across locales.
+_FILE_INTENT_KEYWORDS = frozenset(
+    {
+        "pdf",
+        "informe",
+        "documento",
+        "archivo",
+        "excel",
+        "report",
+        "genera un",
+        "file",
+        "document",
+        "spreadsheet",
+        "create",
+        "generate",
+        "generar",
+        "fichier",
+        "rapport",
+        "générer",
+        "créer",
+        "datei",
+        "bericht",
+        "erstellen",
+        "relatório",
+        "arquivo",
+        "criar",
+        "gerar",
+        "planilha",
+    }
+)
 
 
 def _normalize_tool_by_user_intent(tool: dict, user_prompt: str) -> dict:
@@ -60,7 +91,7 @@ def handle_chat_interaction(
     renamed = False
     chats_actuales = get_user_chats_fn(st.session_state.user_id)
     chat_actual = next((c for c in chats_actuales if c["id"] == st.session_state.chat_id), None)
-    if chat_actual and chat_actual["title"] in ["Nuevo Chat", "New Chat"]:
+    if chat_actual and chat_actual["title"] in all_locale_values_for_key("new_chat_title"):
         new_title = prompt[:30] + ("..." if len(prompt) > 30 else "")
         update_chat_title_fn(st.session_state.chat_id, new_title)
         st.session_state.chat_list = get_user_chats_fn(st.session_state.user_id)
@@ -68,36 +99,35 @@ def handle_chat_interaction(
 
     es_comando_imagen, prompt_artistico = parse_intent_fn(prompt)
 
-    motores_herramienta = {
-        "Groq Whisper (Oídos: Transcripción STT)",
-        "OpenAI TTS (Voz: Text-to-Speech)",
-        "Generador de Assets (Manos: Texto a Imagen)",
-    }
-    if motor in motores_herramienta:
-        _guias = {
-            "Groq Whisper (Oídos: Transcripción STT)": "🎙️ **Modo STT activo.** Sube un archivo de audio en el panel **'Groq Whisper'** del sidebar y pulsa *'Transcribir'*.",
-            "OpenAI TTS (Voz: Text-to-Speech)": "🔊 **Modo TTS activo.** Escribe el texto en el panel **'OpenAI TTS'** del sidebar y pulsa *'Generar Audio'*.",
-            "Generador de Assets (Manos: Texto a Imagen)": "🎨 **Modo Imagen activo.** Escribe tu prompt en el panel **'Generador de Assets'** del sidebar y pulsa *'Generar Imagen'*.",
-        }
-        st.info(_guias[motor])
+    whisper_l = t("engine_whisper")
+    tts_l = t("engine_tts")
+    image_l = t("engine_image")
+    if motor == whisper_l:
+        st.info(t("hint_tool_whisper"))
+        st.stop()
+    if motor == tts_l:
+        st.info(t("hint_tool_tts"))
+        st.stop()
+    if motor == image_l:
+        st.info(t("hint_tool_image"))
         st.stop()
 
     if es_comando_imagen:
         if "Gemini" not in motor:
-            st.warning("⚠️ La generación de arte requiere seleccionar el motor **Gemini** en el panel de control.")
+            st.warning(t("art_requires_gemini"))
             st.stop()
         if not prompt_artistico:
-            st.error("❌ Te ha faltado decirme qué quieres que dibuje.")
+            st.error(t("art_prompt_missing"))
             st.stop()
 
-        prompt_visibilidad = f"🎨 *Has pedido crear:* {prompt_artistico}"
+        prompt_visibilidad = f"🎨 *{t('art_user_asked_create', prompt=prompt_artistico)}*"
         prompt_visibilidad_safe = sanitize_markdown_text(prompt_visibilidad)
         st.session_state.messages.append({"role": "user", "content": prompt_visibilidad_safe})
         with st.chat_message("user", avatar="🧑‍💻"):
             st.markdown(prompt_visibilidad_safe)
 
         with st.chat_message("assistant", avatar="🤖"):
-            with st.spinner("Conectando con el estudio de arte de Gemini..."):
+            with st.spinner(t("art_spinner")):
                 provider = get_gemini_provider_fn()
                 filepath, error = provider.generar_imagen(prompt_artistico)
 
@@ -108,12 +138,12 @@ def handle_chat_interaction(
                 from PIL import Image
 
                 img = Image.open(filepath)
-                st.image(img, caption=f"Obra: {prompt_artistico}", use_container_width=True)
+                st.image(img, caption=t("art_caption", prompt=prompt_artistico), use_container_width=True)
                 render_download_button_fn(filepath)
                 st.session_state.messages.append(
                     {
                         "role": "assistant",
-                        "content": sanitize_markdown_text(f"Aquí tienes la imagen generada: '{prompt_artistico}'"),
+                        "content": sanitize_markdown_text(t("art_done", prompt=prompt_artistico)),
                         "image_path": filepath,
                     }
                 )
@@ -136,7 +166,7 @@ def handle_chat_interaction(
                 from PIL import Image
 
                 imagen_adjunta = Image.open(archivo)
-                texto_extraido = f"\n*(Adjuntada imagen para análisis visual: {archivo.name})*"
+                texto_extraido = t("attach_image_note", name=archivo.name)
             elif _ext in _exts_video:
                 import uuid
 
@@ -144,14 +174,18 @@ def handle_chat_interaction(
                 video_adjunto_path = os.path.join(carpeta_imagenes, safe_filename)
                 with open(video_adjunto_path, "wb") as f:
                     f.write(archivo.getbuffer())
-                texto_extraido = f"\n*(Adjuntado vídeo para análisis: {archivo.name})*"
+                texto_extraido = t("attach_video_note", name=archivo.name)
             else:
                 contenido_extraido = extraer_texto_archivo(archivo)
                 if contenido_extraido.startswith("⛔"):
                     st.warning(contenido_extraido)
-                    texto_extraido = f"\n\n[ARCHIVO: {archivo.name}]\n{contenido_extraido}\n"
+                    texto_extraido = t("attach_doc_error_block", name=archivo.name, body=contenido_extraido)
                 else:
-                    texto_extraido = f"\n\n[CONTENIDO DE {archivo.name.upper()}]:\n{contenido_extraido}\n"
+                    texto_extraido = t(
+                        "attach_doc_content_block",
+                        name=archivo.name.upper(),
+                        content=contenido_extraido,
+                    )
 
         prompt_final = prompt + texto_extraido
         prompt_final_safe = sanitize_markdown_text(prompt_final)
@@ -171,32 +205,36 @@ def handle_chat_interaction(
                     import time
 
                     try:
-                        with st.status("🎬 Inicializando procesamiento de vídeo...", expanded=True) as status:
-                            st.write("📤 Subiendo archivo seguro a Gemini...")
+                        with st.status(t("video_status_init"), expanded=True) as status:
+                            st.write(t("video_uploading"))
                             gemini_key = st.session_state.api_keys.get("GEMINI_API_KEY")
                             if not gemini_key:
-                                st.error("❌ Falta la clave de Gemini para procesar vídeo.")
+                                st.error(t("video_missing_key"))
                                 st.stop()
                             cliente_g = ggenai.Client(api_key=gemini_key)
                             video_file = cliente_g.files.upload(file=video_adjunto_path)
                             start_time = time.time()
                             while video_file.state.name == "PROCESSING":
                                 elapsed = int(time.time() - start_time)
-                                status.update(label=f"🎬 Analizando vídeo en la nube... (⏳ {elapsed}s transcurridos)", state="running")
+                                status.update(label=t("video_analyzing", elapsed=elapsed), state="running")
                                 time.sleep(2)
                                 video_file = cliente_g.files.get(name=video_file.name)
                             if video_file.state.name == "FAILED":
-                                status.update(label="❌ Error crítico de procesamiento", state="error", expanded=True)
-                                st.error("Fallo interno en los servidores de Google GenAI al decodificar el vídeo.")
+                                status.update(label=t("video_failed"), state="error", expanded=True)
+                                st.error(t("video_decode_error"))
                                 st.stop()
-                            status.update(label=f"✅ Vídeo procesado con éxito en {int(time.time() - start_time)}s", state="complete", expanded=False)
+                            status.update(
+                                label=t("video_done", seconds=int(time.time() - start_time)),
+                                state="complete",
+                                expanded=False,
+                            )
                         carga_util.append(video_file)
                     finally:
                         if video_adjunto_path and os.path.exists(video_adjunto_path):
                             os.remove(video_adjunto_path)
             else:
                 if imagen_adjunta:
-                    st.warning("⚠️ Este motor no soporta análisis de imágenes locales.")
+                    st.warning(t("image_motor_unsupported"))
 
             from src.services.llm_provider import LLMFactory
             from src.services.semantic_cache import get_semantic_cache
@@ -232,7 +270,7 @@ def handle_chat_interaction(
             if _cached:
                 clean_res = _cached
                 res_placeholder.markdown(sanitize_markdown_text(clean_res))
-                st.toast("⚡ Respuesta recuperada de caché", icon="⚡")
+                st.toast(t("semantic_cache_toast"), icon="⚡")
                 iteracion = max_iteraciones
 
             _health_monitor.start_request(
@@ -264,8 +302,10 @@ def handle_chat_interaction(
                     if fallback_tier:
                         err_str = str(e)
                         res_placeholder.empty()
-                        st.warning(f"⚠️ Error de {_provider_name}: {err_str[:200]}")
-                        st.info(f"🔄 Cambiando automáticamente a {fallback_tier.name}...")
+                        st.warning(
+                            t("provider_error_warning", provider=_provider_name, detail=err_str[:200])
+                        )
+                        st.info(t("fallback_switching_info", name=fallback_tier.name))
                         provider_backup = LLMFactory.get_provider(
                             motor_name=fallback_tier.motor_key,
                             api_keys=st.session_state.api_keys,
@@ -294,10 +334,12 @@ def handle_chat_interaction(
                             _health_monitor.complete_request(_request_id_fb)
                         except Exception as e_backup:
                             _health_monitor.complete_request(_request_id_fb, error=str(e_backup))
-                            st.error(f"❌ Error en el sistema de respaldo ({fallback_tier.name}): {e_backup}")
+                            st.error(
+                                t("backup_generation_error", name=fallback_tier.name, error=e_backup)
+                            )
                             break
                     else:
-                        st.error(f"❌ Error en la generación ({motor}): {e}")
+                        st.error(t("generation_error", motor=motor, error=e))
                         break
 
                 from src.core.agent_tools import parse_tool_calls
@@ -316,24 +358,20 @@ def handle_chat_interaction(
                 if execute_tool:
                     last_user_text = st.session_state.messages[-1].get("content", "") if st.session_state.messages else ""
                     if execute_tool.get("requires_confirmation") and not tool_guard_cls.has_explicit_approval(last_user_text, "execute_code"):
-                        st.warning("⛔ Ejecución bloqueada. Confirma explícitamente con [approve:execute_code] en tu mensaje.")
+                        st.warning(t("execute_blocked_warning"))
                         st.session_state.security_events.append("execute_code_blocked_no_explicit_approval")
                         break
                     codigo = execute_tool.get("code", "")
-                    with st.spinner("Ejecutando código Python en sandbox local..."):
+                    with st.spinner(t("exec_spinner")):
                         from src.services.execution_service import CodeExecutionService
                         from src.security.execution_timeout_guard import ExecutionTimeoutGuard
 
                         exec_service = CodeExecutionService()
                         _guard = ExecutionTimeoutGuard.get_instance()
                         resultado_ejecucion = exec_service.execute_python(codigo)
-                    st.info("💻 Ejecución de código local completada.")
+                    st.info(t("exec_done_info"))
                     st.session_state.messages.append({"role": "assistant", "content": clean_res_safe})
-                    msg_sistema = (
-                        "RESULTADO DE LA EJECUCIÓN (STDOUT/STDERR):\n"
-                        f"{resultado_ejecucion}\n\n"
-                        "Por favor, usa esta salida para responder al usuario o continuar tu tarea."
-                    )
+                    msg_sistema = TOOL_CONTEXT_PREFIX + t("exec_system_user_message", output=resultado_ejecucion)
                     st.session_state.messages.append({"role": "user", "content": msg_sistema})
                     if "Gemini" in motor:
                         carga_util = [msg_sistema]
@@ -345,18 +383,18 @@ def handle_chat_interaction(
                 rag_tool = next((t for t in tools if t.get("action") == "query_rag"), None)
                 if rag_tool:
                     query = rag_tool.get("query", "").strip().replace("\\n", "").replace("\n", "")
-                    with st.spinner(f"Consultando Cerebro RAG para: '{query}'..."):
+                    with st.spinner(t("rag_spinner", query=query)):
                         from src.services.rag_service import RAGService
 
                         rag_service = RAGService()
                         resultados = rag_service.query(query)
-                    st.info(f"🧠 Consulta RAG completada: {len(resultados)} fragmentos encontrados.")
+                    st.info(t("rag_done_info", count=len(resultados)))
                     st.session_state.messages.append({"role": "assistant", "content": clean_res_safe})
                     if resultados:
                         res_texto = "\n\n".join([f"📄 {r['filename']}:\n{r['content']}..." for r in resultados])
-                        msg_sistema = f"RESULTADOS DEL CEREBRO RAG PARA '{query}':\n{res_texto}\n\nUsa esta información parcial para responder."
+                        msg_sistema = TOOL_CONTEXT_PREFIX + t("rag_results_system", query=query, snippets=res_texto)
                     else:
-                        msg_sistema = f"El Cerebro RAG no encontró resultados relevantes para '{query}'."
+                        msg_sistema = TOOL_CONTEXT_PREFIX + t("rag_empty_system", query=query)
                     st.session_state.messages.append({"role": "user", "content": msg_sistema})
                     if "Gemini" in motor:
                         carga_util = [msg_sistema]
@@ -369,35 +407,22 @@ def handle_chat_interaction(
                 if search_tool:
                     _did_web_search = True
                     query = search_tool.get("query", "").strip().replace("\\n", "").replace("\n", "")
-                    with st.spinner(f"Buscando en la web: '{query}'..."):
+                    with st.spinner(t("web_spinner", query=query)):
                         from src.services.web_search import search_web
 
                         resultados_web = search_web(query)
-                    st.info(f"🌐 Búsqueda web completada: {query}")
+                    st.info(t("web_done_info", query=query))
                     st.session_state.messages.append({"role": "assistant", "content": clean_res_safe})
-                    user_wants_file = any(
-                        kw in prompt.lower()
-                        for kw in ("pdf", "informe", "documento", "archivo", "excel", "report", "genera un")
+                    pl = (prompt or "").lower()
+                    user_wants_file = any(kw in pl for kw in _FILE_INTENT_KEYWORDS)
+                    file_instruction = (
+                        t("web_file_instruction_yes") if user_wants_file else t("web_file_instruction_no")
                     )
-                    if user_wants_file:
-                        file_instruction = (
-                            "4. El usuario SÍ pidió un documento. Genera contenido EXTENSO y "
-                            "PROFESIONAL con el formato adecuado usando create_file.\n"
-                        )
-                    else:
-                        file_instruction = (
-                            "4. El usuario NO pidió un documento. PROHIBIDO usar create_file, "
-                            "PROHIBIDO generar PDF/HTML. Responde SOLO en texto plano en el chat.\n"
-                        )
-                    msg_sistema = (
-                        f"RESULTADOS DE BÚSQUEDA PARA '{query}':\n{resultados_web}\n\n"
-                        "INSTRUCCIONES POST-BÚSQUEDA (OBLIGATORIAS):\n"
-                        "1. Analiza TODAS las fuentes anteriores en profundidad.\n"
-                        "2. Responde al usuario con un resumen claro, completo y bien estructurado "
-                        "basado en los datos extraídos de las fuentes.\n"
-                        "3. PROHIBIDO usar bloques ```json con create_file a menos que se indique en el punto 4.\n"
-                        + file_instruction
-                        + "5. Genera la respuesta definitiva ahora."
+                    msg_sistema = TOOL_CONTEXT_PREFIX + t(
+                        "web_search_tool_system_message",
+                        query=query,
+                        results=resultados_web,
+                        file_instruction=file_instruction,
                     )
                     st.session_state.messages.append({"role": "user", "content": msg_sistema})
                     if "Gemini" in motor:
@@ -425,23 +450,24 @@ def handle_chat_interaction(
                         continue
                     tool_scope_id = f"{st.session_state.user_id}:{action}"
                     if not check_scoped_rate_limit(tool_scope_id, scope="tools"):
-                        st.warning("⏳ Has alcanzado temporalmente el límite de uso de herramientas. Espera un momento.")
+                        st.warning(t("tool_rate_limit_warning"))
                         st.session_state.security_events.append(f"tool_rate_limit_exceeded:{action}")
                         continue
                     if tool.get("action") == "search_web":
                         continue
                     if tool.get("action") == "create_file" and _did_web_search:
-                        _file_keywords = ("pdf", "informe", "documento", "archivo", "excel", "report")
-                        if not any(kw in prompt.lower() for kw in _file_keywords):
+                        if not any(kw in (prompt or "").lower() for kw in _FILE_INTENT_KEYWORDS):
                             continue
                     if tool.get("action") == "open_converter":
                         last_user_text = st.session_state.messages[-1].get("content", "") if st.session_state.messages else ""
                         if tool.get("requires_confirmation") and not tool_guard_cls.has_explicit_approval(last_user_text, "open_converter"):
-                            st.warning("⛔ Conversión bloqueada. Confirma explícitamente con [approve:open_converter].")
+                            st.warning(t("converter_blocked_warning"))
                             st.session_state.security_events.append("open_converter_blocked_no_explicit_approval")
                             continue
                         st.session_state["suggested_format"] = tool.get("suggested_format", "")
-                        st.success(f"🤖 ¡Abriendo panel de conversión para ti (Formato: {st.session_state['suggested_format']})!")
+                        st.success(
+                            t("converter_panel_opening", format=st.session_state["suggested_format"])
+                        )
                         panel_conversor_fn()
                         continue
                     path = factory.execute_tool(tool)
@@ -451,7 +477,7 @@ def handle_chat_interaction(
                             render_download_button_fn(path)
                             rendered_paths.add(path)
                     else:
-                        st.error(f"❌ La herramienta `{tool.get('action')}` falló internamente.")
+                        st.error(t("tool_internal_error", action=tool.get("action")))
 
         st.session_state.messages.append(
             {"role": "assistant", "content": sanitize_markdown_text(clean_res), "file_paths": file_paths}

@@ -32,8 +32,15 @@ def render_auth_gate(
 
     col_left, central_col, col_right = st.columns([1, 2, 1])
     with central_col:
-        st.markdown(f"<h1 style='text-align: center; color: #00F2FE;'>⚡ {t('app_title')}</h1>", unsafe_allow_html=True)
-        st.markdown(f"<h3 style='text-align: center; color: #A0AAB5;'>{t('auth_subtitle')}</h3>", unsafe_allow_html=True)
+        st.markdown(
+            f"""
+<div class="hero-header">
+    <h1 class="hero-title">⚡ {t("app_title")}</h1>
+    <p class="hero-subtitle">{t("header_subtitle")}</p>
+</div>
+""",
+            unsafe_allow_html=True,
+        )
 
         tab1, tab2, tab3 = st.tabs([t("login"), t("register"), t("forgot_password")])
 
@@ -93,7 +100,7 @@ def render_auth_gate(
                                 else:
                                     record_login_failure(ip_key, "ip")
                                     record_login_failure(user_key, "user")
-                                    st.error(result)
+                                    st.error(t(result))
                     else:
                         st.warning(t("fill_all_fields"))
 
@@ -101,7 +108,7 @@ def render_auth_gate(
             with st.form("register_form"):
                 first_name = st.text_input(t("first_name"), placeholder=t("first_name_placeholder"))
                 last_name = st.text_input(t("last_name"), placeholder=t("last_name_placeholder"))
-                email = st.text_input(t("email"), placeholder="ejemplo@correo.com")
+                email = st.text_input(t("email"), placeholder=t("email_placeholder"))
                 new_username = st.text_input(t("new_username"), placeholder=t("new_username_placeholder"))
                 new_password = st.text_input(t("new_password"), type="password")
                 confirm_password = st.text_input(t("confirm_password"), type="password")
@@ -125,7 +132,7 @@ def render_auth_gate(
                                 t("welcome_registered", name=first_name)
                             )
                         else:
-                            st.error(result)
+                            st.error(t(result))
 
         with tab3:
             with st.form("forgot_password_form"):
