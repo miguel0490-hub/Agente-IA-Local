@@ -36,7 +36,7 @@ from src.database.database import (
     verify_user_token,
     update_password_with_token,
 )
-from src.core.config import ESTILOS_CSS
+from src.ui.theme import ESTILOS_CSS
 from src.ui.auth.auth_gate import render_auth_gate
 from src.ui.auth.query_params_gate import handle_auth_query_params
 from src.core.session_manager import init_cookie_manager, check_idle_timeout, try_auto_login
@@ -90,7 +90,8 @@ from src.database.database import (
 )
 from src.services.converter_service import run_conversion
 from src.services.memory_service import cargar_memoria, guardar_memoria, limpiar_memoria
-from src.core.config import CARPETA_IMAGENES, PROMPT_TECH_LEAD, PROMPT_APP_BUILDER, PROMPT_UI_DESIGNER
+from src.core.config import CARPETA_IMAGENES
+from src.core.system_prompts import PROMPT_APP_BUILDER, PROMPT_TECH_LEAD, PROMPT_UI_DESIGNER
 from src.core.intent_parser import parse_intent
 from src.core.ui_helpers import render_download_button
 from src.security.tool_guard import ToolGuard
