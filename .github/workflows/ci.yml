@@ -36,7 +36,7 @@ jobs:
         run: python -m playwright install --with-deps chromium
 
       - name: Unit tests (coverage)
-        run: python -m pytest --ignore=tests/e2e --ignore=tests/load
+        run: python -m pytest --ignore=tests/e2e --ignore=tests/load --cov-fail-under=100
 
       - name: Integration tests
         run: python -m pytest tests/integration/ -v -o "addopts=" --tb=short

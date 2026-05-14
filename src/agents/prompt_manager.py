@@ -1,10 +1,8 @@
 """Modular Prompt Manager — loads, composes and versions system prompts.
 
 Reads prompt profiles and few-shot examples from the ``prompts/`` directory,
-composes them with the base system prompt, and caches the result. The existing
-``PROMPT_TECH_LEAD`` etc. in ``src/core/config.py`` remain the canonical source
-for backward compatibility; this module enriches them with profile context and
-few-shot examples when available.
+composes them with the base system prompt, and caches the result. Canonical
+prompt constants live in ``src/core/system_prompts.py`` (loaded from ``prompts/*.md``).
 """
 
 from __future__ import annotations
@@ -58,7 +56,7 @@ def compose_system_prompt(
 ) -> str:
     """Composes a full system prompt from base + profile + examples + context.
 
-    The base_prompt (from config.py) is always preserved as the core.
+    The base_prompt is always preserved as the core.
     Profile and example enrichments are appended as supplementary context.
     """
     parts: list[str] = [base_prompt]

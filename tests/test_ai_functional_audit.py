@@ -428,6 +428,15 @@ class TestToolCallingPipeline:
         assert ToolValidator.authorize({"action": "delete_file"}) is None
         assert ToolValidator.authorize({"action": "run_system_command"}) is None
 
+    def test_authorize_respects_role_registry(self, monkeypatch):
+        from src.core.agent_tools import ToolValidator
+        import src.agents.registry as registry
+
+        monkeypatch.setattr(registry, "is_tool_allowed_for_role", lambda role, action: False)
+        assert (
+            ToolValidator.authorize({"action": "search_web", "query": "q"}, role_name="tech_lead") is None
+        )
+
     def test_parse_tool_calls_extracts_create_file(self):
         from src.core.agent_tools import parse_tool_calls
         text = '```json\n{"action":"create_file","filename":"test.py","content":"print(1)"}\n```'
@@ -1028,6 +1037,23 @@ class TestConverterService:
     def test_get_file_type_unknown(self):
         from src.services.converter_service import get_file_type
         assert get_file_type("file.xyz") == "unknown"
+
+    def test_normalize_output_extension_rejects_path_traversal(self):
+        from src.services.converter_service import normalize_output_extension
+
+        with pytest.raises(ValueError):
+            normalize_output_extension("../pdf")
+        with pytest.raises(ValueError):
+            normalize_output_extension("pdf/evil")
+
+    def test_run_conversion_rejects_unknown_input_type(self):
+        from src.services.converter_service import run_conversion
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            src = os.path.join(tmpdir, "payload.xyz")
+            dst = os.path.join(tmpdir, "payload.pdf")
+            Path(src).write_text("not convertible", encoding="utf-8")
+            assert run_conversion(src, dst) is False
 
     def test_convert_image_png_to_jpg(self):
         from src.services.converter_service import convert_image

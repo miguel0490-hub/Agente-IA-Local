@@ -179,6 +179,7 @@ def test_get_login_backoff_config_reads_env(monkeypatch):
 
 
 def test_login_backoff_seconds_increases_and_caps(monkeypatch):
+    monkeypatch.setenv("LOGIN_REQUIRE_REDIS", "0")
     monkeypatch.setattr(security, "_get_redis_client", lambda: None)
     monkeypatch.setenv("RATE_LIMIT_LOGIN_USER_WINDOW", "300")
     monkeypatch.setenv("LOGIN_BACKOFF_USER_BASE_SECONDS", "2")
