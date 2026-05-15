@@ -24,9 +24,9 @@ serviceAccount:
 # -- Pod Security ------------------------------------------------------------
 podSecurityContext:
   runAsNonRoot: true
-  runAsUser: 65534
-  runAsGroup: 65534
-  fsGroup: 65534
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
   seccompProfile:
     type: RuntimeDefault
 
@@ -34,8 +34,8 @@ containerSecurityContext:
   allowPrivilegeEscalation: false
   readOnlyRootFilesystem: true
   runAsNonRoot: true
-  runAsUser: 65534
-  runAsGroup: 65534
+  runAsUser: 10001
+  runAsGroup: 10001
   capabilities:
     drop:
       - ALL
@@ -98,11 +98,29 @@ app:
 worker:
   replicaCount: 2
   command:
-    - rq
-    - worker
-    - -u
-    - "$(REDIS_URL)"
-    - superagente
+    - /bin/sh
+    - -c
+    - exec rq worker -u "$REDIS_URL" "$RQ_QUEUE_NAME"
+  livenessProbe:
+    exec:
+      command:
+        - python
+        - -c
+        - "import os,redis; redis.from_url(os.environ['REDIS_URL'], socket_timeout=3).ping()"
+    initialDelaySeconds: 25
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readinessProbe:
+    exec:
+      command:
+        - python
+        - -c
+        - "import os,redis; redis.from_url(os.environ['REDIS_URL'], socket_timeout=3).ping()"
+    initialDelaySeconds: 5
+    periodSeconds: 15
+    timeoutSeconds: 4
+    failureThreshold: 3
   resources:
     requests:
       cpu: 200m
@@ -160,6 +178,48 @@ monitoring:
   nodeSelector: {}
   tolerations: []
 
+# -- FastAPI Gateway (paridad con docker-compose + nginx /api/) --------------
+gateway:
+  enabled: true
+  replicaCount: 2
+  port: 8000
+  command:
+    - uvicorn
+    - src.gateway.app:app
+    - --host
+    - "0.0.0.0"
+    - --port
+    - "8000"
+    - --workers
+    - "2"
+  resources:
+    requests:
+      cpu: 200m
+      memory: 384Mi
+    limits:
+      cpu: "1"
+      memory: 768Mi
+  livenessProbe:
+    httpGet:
+      path: /api/v1/health
+      port: http
+    initialDelaySeconds: 15
+    periodSeconds: 20
+    timeoutSeconds: 3
+    failureThreshold: 3
+  readinessProbe:
+    httpGet:
+      path: /api/v1/health
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  terminationGracePeriodSeconds: 30
+  nodeSelector: {}
+  tolerations: []
+  extraEnv: []
+
 # -- Ingress -----------------------------------------------------------------
 ingress:
   enabled: true
@@ -172,9 +232,6 @@ ingress:
     nginx.ingress.kubernetes.io/proxy-send-timeout: "120"
   hosts:
     - host: superagente.example.com
-      paths:
-        - path: /
-          pathType: Prefix
   tls:
     - secretName: superagente-tls
       hosts:
@@ -249,8 +306,10 @@ config:
 # -- Secrets (base64-encoded at deploy time) ---------------------------------
 secrets:
   APP_SECRET_KEY: ""
+  SERVICE_JWT_SECRET: ""
   DATABASE_URL: ""
   REDIS_URL: ""
+  REDIS_PASSWORD: ""
   POSTGRES_PASSWORD: ""
   GEMINI_API_KEY: ""
   GROQ_API_KEY: ""

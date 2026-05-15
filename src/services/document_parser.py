@@ -272,7 +272,10 @@ def extraer_texto_archivo(file_obj) -> str:
             return t("doc_rag_enqueued", name=nombre, words=palabras, job_id=job_id)
 
         rag = RAGService()
-        chunks = rag.index_document(nombre, texto_extraido)
+        try:
+            chunks = rag.index_document(nombre, texto_extraido)
+        finally:
+            rag.close()
         return t("doc_rag_indexed", name=nombre, words=palabras, chunks=chunks)
 
     return texto_extraido

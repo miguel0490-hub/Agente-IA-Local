@@ -66,13 +66,14 @@ class TestLazyImportVerification:
 
     def test_google_genai_not_imported_at_startup(self):
         for mod in list(sys.modules):
-            if mod.startswith("google.genai"):
+            if mod == "google.genai" or mod.startswith("google.genai."):
                 del sys.modules[mod]
 
         importlib.import_module("src.services.llm_provider")
 
         google_genai_loaded = any(
-            mod.startswith("google.genai") for mod in sys.modules
+            mod == "google.genai" or mod.startswith("google.genai.")
+            for mod in sys.modules
         )
         assert not google_genai_loaded, "google.genai should be lazy-imported"
 

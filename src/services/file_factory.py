@@ -4,7 +4,10 @@ import io
 import datetime
 import re
 import html
+from pathlib import Path
 from src.core.config import CARPETA_IMAGENES
+from src.services.text_unescape import unescape_llm_file_content
+from src.services.web_bundle import is_web_asset_filename, patch_html_content
 
 # Imports pesados movidos al interior de los métodos para Lazy Loading
 
@@ -44,10 +47,14 @@ class FileFactory:
         from src.security.path_guard import safe_filename as _safe_filename
 
         raw_filename = tool_data.get("filename", f"file_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}.txt")
-        filepath = str(_safe_filename(raw_filename, self.output_dir, prefix_uuid=True))
+        # HTML/CSS/JS deben coincidir con href/src del LLM (style.css, app.js).
+        use_uuid_prefix = not is_web_asset_filename(raw_filename)
+        filepath = str(
+            _safe_filename(raw_filename, self.output_dir, prefix_uuid=use_uuid_prefix)
+        )
         
         action = tool_data.get("action")
-        content = tool_data.get("content", "")
+        content = unescape_llm_file_content(tool_data.get("content", "") or "")
         
         try:
             if action == "create_file":
@@ -69,6 +76,9 @@ class FileFactory:
             return None
 
     def _create_text(self, filepath, content):
+        content = unescape_llm_file_content(content)
+        if str(filepath).lower().endswith((".html", ".htm")):
+            content = patch_html_content(content, Path(self.output_dir))
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(content)
         return filepath

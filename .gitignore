@@ -33,14 +33,26 @@ auditoria_*.md
 codebase_*.md
 codebase_*.xml
 codigo_completo_*.txt
+docs/PROJECT_FULL_CODE.md
+docs/TECH_LEAD_PROYECTO_COMPLETO.md
 export_project.py
 genera_auditoria.py
+tools/add_*_i18n.py
+tools/merge_i18n_*.py
+tools/generate_tech_lead_proyecto_completo.py
 
 # Backups de archivos de configuración
 *.bak
 
 # Logs locales
 logs/
+
+# Backups y certificados TLS locales
+backups/
+deploy/certbot/conf/live/
+deploy/certbot/conf/archive/
+deploy/certbot/conf/renewal/
+deploy/nginx.ssl.conf
 
 # Tests y cobertura
 .coverage

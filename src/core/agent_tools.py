@@ -5,6 +5,7 @@ from typing import Optional
 from src.core.logger import get_logger
 from src.security.prompt_injection_detector import PromptInjectionDetector
 from src.security.tool_guard import ToolGuard
+from src.services.text_unescape import unescape_llm_file_content
 
 logger = get_logger(__name__)
 
@@ -144,11 +145,36 @@ def _parse_tool_payload(raw_block: str) -> Optional[dict]:
 
 
 def _sanitize_tool_strings(tool: dict) -> None:
-    """Strips trailing \\n, whitespace and literal backslash-n from string fields."""
+    """Limpia campos cortos; el contenido de archivos se normaliza aparte."""
     for key in ("query", "filename", "suggested_format"):
         val = tool.get(key)
         if isinstance(val, str):
-            tool[key] = val.strip().replace("\\n", "").replace("\n", "")
+            tool[key] = val.strip()
+
+
+def _normalize_tool_file_content(tool: dict) -> None:
+    """Decodifica escapes literales en create_file/edit_file antes de escribir disco."""
+    content = tool.get("content")
+    if isinstance(content, str):
+        tool["content"] = unescape_llm_file_content(content)
+
+
+_WEB_ASSET_EXTENSIONS = (".html", ".htm", ".js", ".css", ".mjs")
+
+
+def _tool_payload_blocked_by_injection(data: dict) -> bool:
+    """Evita falsos positivos: HTML/JS/CSS legítimos usan <script>, onclick, etc."""
+    action = (data.get("action") or "").strip().lower()
+    serialized = json.dumps(data, ensure_ascii=False)
+    if action == "create_file":
+        fn = (data.get("filename") or "").lower()
+        if fn.endswith(_WEB_ASSET_EXTENSIONS):
+            meta = {k: v for k, v in data.items() if k != "content"}
+            return PromptInjectionDetector.analyze(
+                json.dumps(meta, ensure_ascii=False)
+            ).is_high_risk
+        return PromptInjectionDetector.analyze(serialized).is_suspicious
+    return PromptInjectionDetector.analyze(serialized).is_high_risk
 
 
 def parse_tool_calls(text: str, role_name: str = "") -> tuple[str, list]:
@@ -163,14 +189,16 @@ def parse_tool_calls(text: str, role_name: str = "") -> tuple[str, list]:
 
     for match in matches:
         raw_block = match.group(1).strip()
-        raw_block = raw_block.replace("\n", "\\n").replace("\\\\n", "\\n")
         consumed_blocks.add(raw_block)
-        if PromptInjectionDetector.detect(raw_block):
-            logger.warning("[SECURITY] Bloque JSON rechazado por patrón de prompt-injection.")
-            continue
 
         data = _parse_tool_payload(raw_block)
         if not data:
+            continue
+        if _tool_payload_blocked_by_injection(data):
+            logger.warning(
+                "[SECURITY] Bloque JSON rechazado por patrón de prompt-injection (action=%s).",
+                data.get("action"),
+            )
             continue
 
         # Mensaje conversacional estructurado: no se ejecuta herramienta.
@@ -181,6 +209,7 @@ def parse_tool_calls(text: str, role_name: str = "") -> tuple[str, list]:
         authorized_tool = ToolValidator.authorize(data, role_name=role_name)
         if authorized_tool:
             _sanitize_tool_strings(authorized_tool)
+            _normalize_tool_file_content(authorized_tool)
             tools_to_run.append(authorized_tool)
             action = authorized_tool.get("action")
             if action == "search_web":
@@ -191,10 +220,14 @@ def parse_tool_calls(text: str, role_name: str = "") -> tuple[str, list]:
 
     for raw_obj in _extract_balanced_json_objects(text_without_fences):
         candidate = raw_obj.strip()
-        if PromptInjectionDetector.detect(candidate):
-            continue
         data = _parse_tool_payload(candidate)
         if not data:
+            continue
+        if _tool_payload_blocked_by_injection(data):
+            logger.warning(
+                "[SECURITY] JSON inline rechazado por prompt-injection (action=%s).",
+                data.get("action"),
+            )
             continue
         if data.get("action") == "respond" and data.get("message"):
             clean_text = clean_text.replace(raw_obj, str(data.get("message")))
@@ -203,6 +236,7 @@ def parse_tool_calls(text: str, role_name: str = "") -> tuple[str, list]:
         if not authorized_tool:
             continue
         _sanitize_tool_strings(authorized_tool)
+        _normalize_tool_file_content(authorized_tool)
         tools_to_run.append(authorized_tool)
         action = authorized_tool.get("action")
         if action == "search_web":

@@ -2,13 +2,15 @@
 Límites de peticiones y protección de login (rate limiting, backoff, Redis opcional).
 
 Usado por el chat, subidas, herramientas y el formulario de autenticación. Las claves
-`ratelimit:login:*` y `loginfail:*` pueden exigir Redis vía `LOGIN_REQUIRE_REDIS` para no
-degradar a almacenamiento en memoria en producción.
+``ratelimit:login:*`` y ``loginfail:*`` usan Redis si está disponible; con
+``LOGIN_REQUIRE_REDIS=1`` y Redis caído se degrada a memoria del proceso (con log de aviso).
 """
 
 import os
 import time
 from typing import Dict
+
+from src.core.logger import get_logger
 
 try:
     import redis  # type: ignore
@@ -18,6 +20,9 @@ except Exception:  # pragma: no cover
 # Almacén en memoria para el MVP (se migrará a Redis en el futuro)
 _RATE_LIMITS: Dict[str, list] = {}
 _REDIS_CLIENT = None
+_LOGIN_REDIS_DEGRADE_WARNED = False
+
+_logger = get_logger(__name__)
 
 _DEFAULT_LIMITS = {
     "chat": (10, 60),
@@ -47,7 +52,7 @@ def _env_truthy(name: str, default: bool = False) -> bool:
 
 
 def _login_security_requires_redis() -> bool:
-    """When True, login rate limit / backoff must use Redis (no in-memory fallback)."""
+    """When True, login rate limit / backoff prefer Redis (in-memory fallback if Redis fails)."""
     return _env_truthy("LOGIN_REQUIRE_REDIS", default=False)
 
 
@@ -56,10 +61,20 @@ def _is_login_security_key(key: str) -> bool:
 
 
 def login_security_backend_ready() -> bool:
-    """False when LOGIN_REQUIRE_REDIS is set but Redis is not connected."""
-    if not _login_security_requires_redis():
-        return True
-    return _get_redis_client() is not None
+    """Siempre permite intentar login.
+
+    Con ``LOGIN_REQUIRE_REDIS=1`` y Redis caído o mal configurado, los límites y el
+    backoff de login se aplican en memoria del proceso (adecuado para Streamlit en
+    un solo worker; en clúster usar Redis operativo).
+    """
+    global _LOGIN_REDIS_DEGRADE_WARNED
+    if _login_security_requires_redis() and _get_redis_client() is None and not _LOGIN_REDIS_DEGRADE_WARNED:
+        _LOGIN_REDIS_DEGRADE_WARNED = True
+        _logger.warning(
+            "LOGIN_REQUIRE_REDIS=1 pero Redis no está disponible; "
+            "límites de login y backoff usan memoria local hasta reiniciar el proceso."
+        )
+    return True
 
 
 def _get_redis_client():
@@ -78,6 +93,28 @@ def _get_redis_client():
         return _REDIS_CLIENT
     except Exception:
         return None
+
+
+def reset_login_throttle_state() -> None:
+    """Pone a cero límites y backoff solo del flujo de login (memoria y Redis).
+
+    Evita bloqueos persistentes por ``ip:unknown`` o pruebas repetidas en local.
+    No modifica contadores de chat, tools, subidas, etc.
+    """
+    for k in list(_RATE_LIMITS.keys()):
+        if k.startswith("ratelimit:login:") or k.startswith("loginfail:"):
+            _RATE_LIMITS.pop(k, None)
+
+    client = _get_redis_client()
+    if not client:
+        return
+    try:
+        for key in client.scan_iter(match="ratelimit:login:*"):
+            client.delete(key)
+        for key in client.scan_iter(match="loginfail:*"):
+            client.delete(key)
+    except Exception as exc:
+        _logger.warning("Redis: no se pudieron borrar claves de throttling de login: %s", exc)
 
 
 def get_rate_limit_config(scope: str, fallback_limit: int | None = None, fallback_window: int | None = None) -> tuple[int, int]:
@@ -118,8 +155,6 @@ def _count_recent_events(key: str, window_seconds: int) -> int:
     now = time.time()
     require = _login_security_requires_redis() and _is_login_security_key(key)
     client = _get_redis_client()
-    if require and not client:
-        return 10**9
     if client:
         try:
             pipe = client.pipeline()
@@ -129,7 +164,7 @@ def _count_recent_events(key: str, window_seconds: int) -> int:
             return int(current)
         except Exception:
             if require:
-                return 10**9
+                _logger.warning("Redis error al contar eventos de login; usando memoria local para %s", key)
 
     if key not in _RATE_LIMITS:
         return 0
@@ -141,8 +176,6 @@ def _append_event(key: str, window_seconds: int) -> None:
     now = time.time()
     require = _login_security_requires_redis() and _is_login_security_key(key)
     client = _get_redis_client()
-    if require and not client:
-        return
     if client:
         try:
             client.zadd(key, {str(now): now})
@@ -150,7 +183,7 @@ def _append_event(key: str, window_seconds: int) -> None:
             return
         except Exception:
             if require:
-                return
+                _logger.warning("Redis error al registrar evento de login; usando memoria local para %s", key)
 
     if key not in _RATE_LIMITS:
         _RATE_LIMITS[key] = []
@@ -185,8 +218,6 @@ def _consume_rate_limit(key: str, limit: int, window_seconds: int) -> bool:
 
     require = _login_security_requires_redis() and _is_login_security_key(key)
     client = _get_redis_client()
-    if require and not client:
-        return False
     if client:
         try:
             pipe = client.pipeline()
@@ -200,7 +231,7 @@ def _consume_rate_limit(key: str, limit: int, window_seconds: int) -> bool:
             return True
         except Exception:
             if require:
-                return False
+                _logger.warning("Redis error al consumir rate limit; usando memoria local para %s", key)
 
     if key not in _RATE_LIMITS:
         _RATE_LIMITS[key] = []

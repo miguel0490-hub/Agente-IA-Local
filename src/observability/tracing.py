@@ -30,6 +30,12 @@ except ImportError:
 _initialized = False
 
 
+def _otlp_exporter_insecure() -> bool:
+    """True solo si se fuerza explícitamente (p. ej. colector local sin TLS). Por defecto TLS."""
+    v = os.getenv("OTEL_EXPORTER_OTLP_INSECURE", "").strip().lower()
+    return v in ("1", "true", "yes", "on")
+
+
 def init_tracing(service_name: str = "superagente-ia") -> None:
     """Initializes OpenTelemetry tracing with OTLP exporter."""
     global _initialized
@@ -48,7 +54,7 @@ def init_tracing(service_name: str = "superagente-ia") -> None:
     })
 
     provider = TracerProvider(resource=resource)
-    exporter = OTLPSpanExporter(endpoint=endpoint, insecure=True)
+    exporter = OTLPSpanExporter(endpoint=endpoint, insecure=_otlp_exporter_insecure())
     provider.add_span_processor(BatchSpanProcessor(exporter))
     trace.set_tracer_provider(provider)
 

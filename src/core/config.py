@@ -29,3 +29,5 @@ CLAVE_OPENROUTER = os.getenv("OPENROUTER_API_KEY")
 # Claves de API — Nuevas herramientas (Audio + Imagen)
 CLAVE_OPENAI = os.getenv("OPENAI_API_KEY")
 CLAVE_STABILITY = os.getenv("STABILITY_API_KEY")
+
+# Estilos globales (`ESTILOS_CSS`) y tokens de tema: `src/ui/theme.py` (inyectados desde `app.py`).

@@ -124,9 +124,6 @@ ingress:
     nginx.ingress.kubernetes.io/enable-owasp-core-rules: "true"
   hosts:
     - host: superagente.example.com
-      paths:
-        - path: /
-          pathType: Prefix
   tls:
     - secretName: superagente-prod-tls
       hosts:

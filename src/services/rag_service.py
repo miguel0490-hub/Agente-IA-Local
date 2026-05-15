@@ -12,11 +12,22 @@ DB_PATH = "data/rag_brain.db"
 
 class RAGService:
     """Servicio de Cerebro de Larga Duración basado en SQLite FTS5 para RAG local sin dependencias."""
-    
+
     def __init__(self):
         os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
         self.conn = sqlite3.connect(DB_PATH, check_same_thread=False)
         self._init_db()
+
+    def close(self) -> None:
+        if self.conn is not None:
+            self.conn.close()
+            self.conn = None
+
+    def __enter__(self) -> "RAGService":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()
 
     def _init_db(self):
         """Crea la tabla virtual FTS5 si no existe (idempotente)."""

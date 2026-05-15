@@ -12,7 +12,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 load_dotenv()
 
 from src.core.agent_tools import parse_tool_calls
-from src.core.config import CLAVE_GROQ, INSTRUCCIONES_SISTEMA
+from src.core.config import CLAVE_GROQ
+from src.core.system_prompts import INSTRUCCIONES_SISTEMA
 from src.services.file_factory import FileFactory
 
 PROMPT_TEST = (

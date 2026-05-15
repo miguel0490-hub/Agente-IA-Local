@@ -7,6 +7,7 @@ import re
 
 import streamlit as st
 
+from src.core.chat_display import messages_for_display
 from src.core.i18n import TOOL_CONTEXT_PREFIX, t
 from src.core.sanitizer import sanitize_markdown_text
 
@@ -57,9 +58,12 @@ def _is_internal_message(content: str) -> bool:
     return any(content.startswith(p) for p in _LEGACY_TOOL_PREFIXES)
 
 
-def render_chat_messages(messages: list, render_download_button_fn) -> None:
-    """Renders full chat thread, including images, audio, and file downloads."""
-    for idx, msg in enumerate(messages):
+def _render_chat_messages_body(messages: list, render_download_button_fn) -> None:
+    """Renders full chat thread (inner implementation)."""
+    visible, hidden_count = messages_for_display(messages)
+    if hidden_count > 0:
+        st.caption(t("chat_history_truncated", count=hidden_count, default=f"… {hidden_count} mensajes anteriores ocultos por rendimiento."))
+    for idx, msg in enumerate(visible):
         if msg.get("role") == "system":
             continue
         content = msg.get("content", "")
@@ -79,10 +83,7 @@ def render_chat_messages(messages: list, render_download_button_fn) -> None:
 
             if msg.get("image_path") and os.path.exists(msg.get("image_path")):
                 filepath = msg["image_path"]
-                from PIL import Image
-
-                img = Image.open(filepath)
-                st.image(img, caption=t("chat_image_caption"), use_container_width=True)
+                st.image(filepath, caption=t("chat_image_caption"), use_container_width=True)
                 render_download_button_fn(filepath)
             if msg.get("audio_path") and os.path.exists(msg.get("audio_path")):
                 st.audio(msg.get("audio_path"))
@@ -91,3 +92,12 @@ def render_chat_messages(messages: list, render_download_button_fn) -> None:
             if msg.get("file_paths"):
                 for fp in msg.get("file_paths"):
                     render_download_button_fn(fp)
+
+
+def render_chat_messages(messages: list, render_download_button_fn) -> None:
+    """Renders chat thread; uses @st.fragment when available to limit rerun scope."""
+    fragment = getattr(st, "fragment", None)
+    if fragment is not None:
+        fragment(_render_chat_messages_body)(messages, render_download_button_fn)
+    else:
+        _render_chat_messages_body(messages, render_download_button_fn)

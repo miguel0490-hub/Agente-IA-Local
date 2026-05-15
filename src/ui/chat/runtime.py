@@ -94,6 +94,9 @@ def handle_chat_interaction(
     if chat_actual and chat_actual["title"] in all_locale_values_for_key("new_chat_title"):
         new_title = prompt[:30] + ("..." if len(prompt) > 30 else "")
         update_chat_title_fn(st.session_state.chat_id, new_title)
+        from src.core.streamlit_cache import invalidate_sidebar_cache
+
+        invalidate_sidebar_cache()
         st.session_state.chat_list = get_user_chats_fn(st.session_state.user_id)
         renamed = True
 
@@ -154,7 +157,7 @@ def handle_chat_interaction(
         from PIL import Image
 
         from src.services.document_parser import extraer_texto_archivo
-        from src.ui.chat.composer_hub import attachments_for_chat_send
+        from src.ui.sidebar.attachments import attachments_for_chat_send
 
         if archivos_adjuntos is not None:
             archivos = [a for a in archivos_adjuntos if a is not None]
@@ -201,12 +204,25 @@ def handle_chat_interaction(
                         content=contenido_extraido,
                     )
 
+        if texto_extraido and "Groq" in motor:
+            from src.services.context_manager import truncate_text
+
+            max_inline = int(os.getenv("GROQ_INLINE_ATTACHMENT_MAX_CHARS", "28000"))
+            texto_extraido, was_cut = truncate_text(
+                texto_extraido,
+                max_inline,
+                suffix=t("attach_groq_truncated_suffix"),
+            )
+            if was_cut:
+                st.info(t("attach_groq_truncated_hint"))
+
         prompt_final = prompt + texto_extraido
         prompt_final_safe = sanitize_markdown_text(prompt_final)
 
         if archivos:
             st.session_state.staged_attachments = []
             st.session_state.attachment_hub_uploader_inc = int(st.session_state.get("attachment_hub_uploader_inc", 0)) + 1
+            st.session_state.form_clear_counter = int(st.session_state.get("form_clear_counter", 0)) + 1
 
         st.session_state.messages.append({"role": "user", "content": prompt_final_safe})
         with st.chat_message("user", avatar="🧑‍💻"):
@@ -220,10 +236,6 @@ def handle_chat_interaction(
                 for im in imagenes_adjuntas:
                     carga_util.append(im)
                 if video_local_paths:
-                    import time
-
-                    import google.genai as ggenai
-
                     gemini_key = st.session_state.api_keys.get("GEMINI_API_KEY")
                     if not gemini_key:
                         st.error(t("video_missing_key"))
@@ -231,43 +243,16 @@ def handle_chat_interaction(
                             if os.path.exists(vp):
                                 os.remove(vp)
                         st.stop()
-                    cliente_g = ggenai.Client(api_key=gemini_key)
-                    n_vid = len(video_local_paths)
-                    for vi, video_path in enumerate(video_local_paths):
-                        try:
-                            label = t("video_status_init")
-                            if n_vid > 1:
-                                label = f"{label} ({vi + 1}/{n_vid})"
-                            with st.status(label, expanded=True) as status:
-                                st.write(t("video_uploading"))
-                                video_file = cliente_g.files.upload(file=video_path)
-                                start_time = time.time()
-                                while video_file.state.name == "PROCESSING":
-                                    elapsed = int(time.time() - start_time)
-                                    status.update(label=t("video_analyzing", elapsed=elapsed), state="running")
-                                    time.sleep(2)
-                                    video_file = cliente_g.files.get(name=video_file.name)
-                                if video_file.state.name == "FAILED":
-                                    status.update(label=t("video_failed"), state="error", expanded=True)
-                                    st.error(t("video_decode_error"))
-                                    for vp2 in video_local_paths[vi:]:
-                                        if os.path.exists(vp2):
-                                            os.remove(vp2)
-                                    st.stop()
-                                status.update(
-                                    label=t("video_done", seconds=int(time.time() - start_time)),
-                                    state="complete",
-                                    expanded=False,
-                                )
-                            carga_util.append(video_file)
-                        finally:
-                            if video_path and os.path.exists(video_path):
-                                os.remove(video_path)
+                    from src.ui.chat.gemini_video_flow import resolve_gemini_video_files
+
+                    for video_file in resolve_gemini_video_files(video_local_paths, gemini_key):
+                        carga_util.append(video_file)
             else:
                 if imagenes_adjuntas:
                     st.warning(t("image_motor_unsupported"))
 
             from src.services.llm_provider import LLMFactory
+            from src.services.file_factory import FileFactory
             from src.services.semantic_cache import get_semantic_cache
             from src.agents.prompt_manager import enrich_system_instruction
             from src.agents.tool_router import get_tool_router
@@ -370,99 +355,105 @@ def handle_chat_interaction(
                             )
                             break
                     else:
-                        st.error(t("generation_error", motor=motor, error=e))
+                        st.error(f"❌ Error en la API del motor: {e!s}")
                         break
 
-                from src.core.agent_tools import parse_tool_calls
-                from src.services.file_factory import FileFactory
+                try:
+                    from src.core.agent_tools import parse_tool_calls
 
-                clean_res, tools = parse_tool_calls(full_res, role_name=_active_role)
+                    clean_res, tools = parse_tool_calls(full_res, role_name=_active_role)
 
-                _validation = validate_response(clean_res)
-                if _validation.sanitized_text:
-                    clean_res = _validation.sanitized_text
+                    _validation = validate_response(clean_res)
+                    if _validation.sanitized_text:
+                        clean_res = _validation.sanitized_text
 
-                clean_res_safe = sanitize_markdown_text(clean_res)
-                res_placeholder.markdown(clean_res_safe)
+                    clean_res_safe = sanitize_markdown_text(clean_res)
+                    res_placeholder.markdown(clean_res_safe)
 
-                execute_tool = next((t for t in tools if t.get("action") == "execute_code"), None)
-                if execute_tool:
-                    last_user_text = st.session_state.messages[-1].get("content", "") if st.session_state.messages else ""
-                    if execute_tool.get("requires_confirmation") and not tool_guard_cls.has_explicit_approval(last_user_text, "execute_code"):
-                        st.warning(t("execute_blocked_warning"))
-                        st.session_state.security_events.append("execute_code_blocked_no_explicit_approval")
-                        break
-                    codigo = execute_tool.get("code", "")
-                    with st.spinner(t("exec_spinner")):
-                        from src.services.execution_service import CodeExecutionService
-                        from src.security.execution_timeout_guard import ExecutionTimeoutGuard
+                    execute_tool = next((tool for tool in tools if tool.get("action") == "execute_code"), None)
+                    if execute_tool:
+                        last_user_text = st.session_state.messages[-1].get("content", "") if st.session_state.messages else ""
+                        if execute_tool.get("requires_confirmation") and not tool_guard_cls.has_explicit_approval(last_user_text, "execute_code"):
+                            st.warning(t("execute_blocked_warning"))
+                            st.session_state.security_events.append("execute_code_blocked_no_explicit_approval")
+                            break
+                        codigo = execute_tool.get("code", "")
+                        with st.spinner(t("exec_spinner")):
+                            from src.services.execution_service import CodeExecutionService
+                            from src.security.execution_timeout_guard import ExecutionTimeoutGuard
 
-                        exec_service = CodeExecutionService()
-                        _guard = ExecutionTimeoutGuard.get_instance()
-                        resultado_ejecucion = exec_service.execute_python(codigo)
-                    st.info(t("exec_done_info"))
-                    st.session_state.messages.append({"role": "assistant", "content": clean_res_safe})
-                    msg_sistema = TOOL_CONTEXT_PREFIX + t("exec_system_user_message", output=resultado_ejecucion)
-                    st.session_state.messages.append({"role": "user", "content": msg_sistema})
-                    if "Gemini" in motor:
-                        carga_util = [msg_sistema]
-                    else:
-                        prompt_final = msg_sistema
-                    res_placeholder = st.empty()
-                    continue
+                            exec_service = CodeExecutionService()
+                            _guard = ExecutionTimeoutGuard.get_instance()
+                            resultado_ejecucion = exec_service.execute_python(codigo)
+                        st.info(t("exec_done_info"))
+                        st.session_state.messages.append({"role": "assistant", "content": clean_res_safe})
+                        msg_sistema = TOOL_CONTEXT_PREFIX + t("exec_system_user_message", output=resultado_ejecucion)
+                        st.session_state.messages.append({"role": "user", "content": msg_sistema})
+                        if "Gemini" in motor:
+                            carga_util = [msg_sistema]
+                        else:
+                            prompt_final = msg_sistema
+                        res_placeholder = st.empty()
+                        continue
 
-                rag_tool = next((t for t in tools if t.get("action") == "query_rag"), None)
-                if rag_tool:
-                    query = rag_tool.get("query", "").strip().replace("\\n", "").replace("\n", "")
-                    with st.spinner(t("rag_spinner", query=query)):
-                        from src.services.rag_service import RAGService
+                    rag_tool = next((tool for tool in tools if tool.get("action") == "query_rag"), None)
+                    if rag_tool:
+                        query = rag_tool.get("query", "").strip().replace("\\n", "").replace("\n", "")
+                        with st.spinner(t("rag_spinner", query=query)):
+                            from src.services.rag_service import RAGService
 
-                        rag_service = RAGService()
-                        resultados = rag_service.query(query)
-                    st.info(t("rag_done_info", count=len(resultados)))
-                    st.session_state.messages.append({"role": "assistant", "content": clean_res_safe})
-                    if resultados:
-                        res_texto = "\n\n".join([f"📄 {r['filename']}:\n{r['content']}..." for r in resultados])
-                        msg_sistema = TOOL_CONTEXT_PREFIX + t("rag_results_system", query=query, snippets=res_texto)
-                    else:
-                        msg_sistema = TOOL_CONTEXT_PREFIX + t("rag_empty_system", query=query)
-                    st.session_state.messages.append({"role": "user", "content": msg_sistema})
-                    if "Gemini" in motor:
-                        carga_util = [msg_sistema]
-                    else:
-                        prompt_final = msg_sistema
-                    res_placeholder = st.empty()
-                    continue
+                            rag_service = RAGService()
+                            try:
+                                resultados = rag_service.query(query)
+                            finally:
+                                rag_service.close()
+                        st.info(t("rag_done_info", count=len(resultados)))
+                        st.session_state.messages.append({"role": "assistant", "content": clean_res_safe})
+                        if resultados:
+                            res_texto = "\n\n".join([f"📄 {r['filename']}:\n{r['content']}..." for r in resultados])
+                            msg_sistema = TOOL_CONTEXT_PREFIX + t("rag_results_system", query=query, snippets=res_texto)
+                        else:
+                            msg_sistema = TOOL_CONTEXT_PREFIX + t("rag_empty_system", query=query)
+                        st.session_state.messages.append({"role": "user", "content": msg_sistema})
+                        if "Gemini" in motor:
+                            carga_util = [msg_sistema]
+                        else:
+                            prompt_final = msg_sistema
+                        res_placeholder = st.empty()
+                        continue
 
-                search_tool = next((t for t in tools if t.get("action") == "search_web"), None)
-                if search_tool:
-                    _did_web_search = True
-                    query = search_tool.get("query", "").strip().replace("\\n", "").replace("\n", "")
-                    with st.spinner(t("web_spinner", query=query)):
-                        from src.services.web_search import search_web
+                    search_tool = next((tool for tool in tools if tool.get("action") == "search_web"), None)
+                    if search_tool:
+                        _did_web_search = True
+                        query = search_tool.get("query", "").strip().replace("\\n", "").replace("\n", "")
+                        with st.spinner(t("web_spinner", query=query)):
+                            from src.services.web_search import search_web
 
-                        resultados_web = search_web(query)
-                    st.info(t("web_done_info", query=query))
-                    st.session_state.messages.append({"role": "assistant", "content": clean_res_safe})
-                    pl = (prompt or "").lower()
-                    user_wants_file = any(kw in pl for kw in _FILE_INTENT_KEYWORDS)
-                    file_instruction = (
-                        t("web_file_instruction_yes") if user_wants_file else t("web_file_instruction_no")
-                    )
-                    msg_sistema = TOOL_CONTEXT_PREFIX + t(
-                        "web_search_tool_system_message",
-                        query=query,
-                        results=resultados_web,
-                        file_instruction=file_instruction,
-                    )
-                    st.session_state.messages.append({"role": "user", "content": msg_sistema})
-                    if "Gemini" in motor:
-                        carga_util = [msg_sistema]
-                    else:
-                        prompt_final = msg_sistema
-                    res_placeholder = st.empty()
-                    continue
-                break
+                            resultados_web = search_web(query)
+                        st.info(t("web_done_info", query=query))
+                        st.session_state.messages.append({"role": "assistant", "content": clean_res_safe})
+                        pl = (prompt or "").lower()
+                        user_wants_file = any(kw in pl for kw in _FILE_INTENT_KEYWORDS)
+                        file_instruction = (
+                            t("web_file_instruction_yes") if user_wants_file else t("web_file_instruction_no")
+                        )
+                        msg_sistema = TOOL_CONTEXT_PREFIX + t(
+                            "web_search_tool_system_message",
+                            query=query,
+                            results=resultados_web,
+                            file_instruction=file_instruction,
+                        )
+                        st.session_state.messages.append({"role": "user", "content": msg_sistema})
+                        if "Gemini" in motor:
+                            carga_util = [msg_sistema]
+                        else:
+                            prompt_final = msg_sistema
+                        res_placeholder = st.empty()
+                        continue
+                    break
+                except Exception as _flow_err:
+                    st.error(f"❌ Error en la API del motor o al procesar herramientas: {_flow_err!s}")
+                    break
 
             _health_monitor.complete_request(_request_id)
 
@@ -471,6 +462,9 @@ def handle_chat_interaction(
 
             file_paths = []
             if tools:
+                from src.services.web_bundle import order_tools_for_web_bundle
+
+                tools = order_tools_for_web_bundle(tools)
                 factory = FileFactory(output_dir=carpeta_imagenes)
                 rendered_paths = set()
                 _allowed_tools = _routing.allowed_tools
@@ -509,6 +503,29 @@ def handle_chat_interaction(
                             rendered_paths.add(path)
                     else:
                         st.error(t("tool_internal_error", action=tool.get("action")))
+                for path in file_paths:
+                    if str(path).lower().endswith((".html", ".htm")):
+                        from pathlib import Path as _Path
+
+                        from src.services.web_bundle import (
+                            find_broken_asset_refs,
+                            patch_html_asset_links,
+                        )
+
+                        patch_html_asset_links(path)
+                        broken = find_broken_asset_refs(_Path(path))
+                        if broken:
+                            st.warning(
+                                t(
+                                    "web_bundle_broken_links",
+                                    default=(
+                                        "Algunos enlaces del HTML no encuentran su archivo "
+                                        "({files}). Comprueba que style.css y app.js existan "
+                                        "con esos nombres exactos."
+                                    ),
+                                    files=", ".join(broken),
+                                )
+                            )
 
         st.session_state.messages.append(
             {"role": "assistant", "content": sanitize_markdown_text(clean_res), "file_paths": file_paths}

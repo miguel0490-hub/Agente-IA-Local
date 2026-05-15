@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import streamlit as st
 
-from src.core.i18n import SUPPORTED_LANGUAGES, get_language, set_language, t
+from src.core.i18n import get_language, t
 
 
 def _load_control_center_guide() -> str:
@@ -21,22 +22,6 @@ def _load_control_center_guide() -> str:
 
 def render_control_center_dialog(update_api_keys_fn) -> None:
     """Renders the control-center tabs (external models, keys, account)."""
-    st.subheader(t("settings_language"))
-    lang_options = list(SUPPORTED_LANGUAGES.keys())
-    current_idx = lang_options.index(get_language()) if get_language() in lang_options else 0
-    selected_lang = st.selectbox(
-        t("settings_select_language"),
-        options=lang_options,
-        format_func=lambda x: SUPPORTED_LANGUAGES[x],
-        index=current_idx,
-        key="language_selector",
-    )
-    if selected_lang != get_language():
-        set_language(selected_lang)
-        st.session_state.app_language = selected_lang
-        st.rerun()
-    st.divider()
-
     tab1, tab2, tab3 = st.tabs([t("settings_tab_external"), t("settings_tab_keys"), t("settings_tab_account")])
 
     with tab1:
@@ -44,7 +29,9 @@ def render_control_center_dialog(update_api_keys_fn) -> None:
 
         if custom_models:
             st.markdown(t("settings_connected_models"))
-            for cm in custom_models:
+            for idx, cm in enumerate(custom_models):
+                model_key = f"{cm.get('name', '')}|{cm.get('base_url', '')}|{cm.get('model_id', '')}"
+                model_key_hash = hashlib.sha256(model_key.encode("utf-8")).hexdigest()[:12]
                 with st.container(border=True):
                     col_info, col_del = st.columns([5, 1])
                     with col_info:
@@ -55,10 +42,10 @@ def render_control_center_dialog(update_api_keys_fn) -> None:
                     with col_del:
                         if st.button(
                             "🗑️",
-                            key=f"del_{cm['name']}",
+                            key=f"del_custom_model_{idx}_{model_key_hash}",
                             help=t("settings_delete_model_help", name=cm["name"]),
                         ):
-                            custom_models = [m for m in custom_models if m["name"] != cm["name"]]
+                            custom_models = [m for i, m in enumerate(custom_models) if i != idx]
                             updated_keys = {**st.session_state.api_keys, "CUSTOM_MODELS": custom_models}
                             update_api_keys_fn(st.session_state.user_id, updated_keys)
                             st.session_state.api_keys = updated_keys
@@ -77,7 +64,7 @@ def render_control_center_dialog(update_api_keys_fn) -> None:
             cm_key = st.text_input(t("settings_api_key"), type="password")
             cm_model = st.text_input(t("settings_model_id_label"), placeholder=t("settings_model_id_placeholder"))
 
-            if st.form_submit_button(t("settings_connect_button"), type="primary", use_container_width=True):
+            if st.form_submit_button(t("settings_connect_button"), use_container_width=True):
                 if cm_name and cm_url and cm_key and cm_model:
                     from src.security.url_validator import validate_url
                     url_check = validate_url(cm_url.strip(), context="custom_model_save")
@@ -109,7 +96,7 @@ def render_control_center_dialog(update_api_keys_fn) -> None:
             new_oai = st.text_input(t("settings_key_openai"), type="password", value=keys.get("OPENAI_API_KEY", ""))
             new_stab = st.text_input(t("settings_key_stability"), type="password", value=keys.get("STABILITY_API_KEY", ""))
 
-            if st.form_submit_button(t("settings_save_changes"), type="primary", use_container_width=True):
+            if st.form_submit_button(t("settings_save_changes"), use_container_width=True):
                 updated_keys = {
                     **keys,
                     "GEMINI_API_KEY": new_gemini or keys.get("GEMINI_API_KEY", ""),
@@ -139,7 +126,7 @@ def render_control_center_dialog(update_api_keys_fn) -> None:
             new_pass = st.text_input(t("settings_new_password"), type="password")
             confirm_pass = st.text_input(t("settings_confirm_new_password"), type="password")
 
-            if st.form_submit_button(t("settings_update_password"), type="primary", use_container_width=True):
+            if st.form_submit_button(t("settings_update_password"), use_container_width=True):
                 if not old_pass or not new_pass or not confirm_pass:
                     st.warning(t("settings_fill_all_password"))
                 elif new_pass != confirm_pass:

@@ -38,3 +38,14 @@ def pytest_sessionstart(session):
     from src.database.database import init_db
 
     init_db()
+
+
+def pytest_sessionfinish(session, exitstatus):
+    if os.getenv("PYTEST_USE_PG_DATABASE") == "1":
+        return
+    try:
+        from src.database.database import engine
+
+        engine.dispose()
+    except Exception:
+        pass

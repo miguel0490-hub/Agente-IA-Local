@@ -6,27 +6,125 @@ específicos de cada proveedor: Gemini, Groq, OpenRouter y endpoints
 compatibles con la API de OpenAI. También incluye wrappers de audio
 (Transcripción Whisper, Síntesis TTS).
 """
-import os
+import base64
+import binascii
 import datetime
-import json
+import os
 import re
 
 import requests
 
-from src.core.config import CARPETA_IMAGENES, PROMPT_TECH_LEAD
+from src.core.config import CARPETA_IMAGENES
+from src.core.system_prompts import PROMPT_TECH_LEAD
 from src.core.i18n import t
+from src.services.gemini_models import gemini_model_candidates, is_gemini_model_not_found_error
 
 
-def _lazy_ggenai():
-    """Lazy import for google.genai — avoids loading at startup."""
-    import google.genai as ggenai
-    return ggenai
+def _gemini_history_to_genai(historial: list | None) -> list[dict]:
+    """Convierte mensajes {role, content} al historial de ``client.chats.create``."""
+    out: list[dict] = []
+    for m in historial or []:
+        role = (m.get("role") or "").strip()
+        if role == "assistant":
+            role = "model"
+        if role not in ("user", "model"):
+            continue
+        content = (m.get("content") or "").strip()
+        if not content:
+            continue
+        out.append({"role": role, "parts": [{"text": content}]})
+    return out
 
 
-def _lazy_types():
-    """Lazy import for google.genai.types."""
+def _gemini_generation_config(
+    system_instruction: str,
+    *,
+    max_tokens: int,
+    temperature: float,
+):
     from google.genai import types
-    return types
+
+    safety_settings = [
+        types.SafetySetting(
+            category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+            threshold=types.HarmBlockThreshold.BLOCK_NONE,
+        ),
+        types.SafetySetting(
+            category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+            threshold=types.HarmBlockThreshold.BLOCK_NONE,
+        ),
+        types.SafetySetting(
+            category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+            threshold=types.HarmBlockThreshold.BLOCK_NONE,
+        ),
+        types.SafetySetting(
+            category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+            threshold=types.HarmBlockThreshold.BLOCK_NONE,
+        ),
+    ]
+    return types.GenerateContentConfig(
+        system_instruction=system_instruction,
+        max_output_tokens=max_tokens,
+        temperature=temperature,
+        safety_settings=safety_settings,
+    )
+
+
+def _finish_reason_implies_truncation(finish_reason) -> bool:
+    if finish_reason is None:
+        return False
+    s = str(finish_reason).upper()
+    return "MAX" in s or "LENGTH" in s
+
+
+def _imagen_via_rest(api_key: str, prompt: str) -> tuple[bytes | None, str | None]:
+    """Imagen 4 vía REST (misma API pública que documenta Google AI); no requiere google-genai."""
+    url = "https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict"
+    payload = {
+        "instances": [{"prompt": prompt}],
+        "parameters": {"sampleCount": 1, "aspectRatio": "1:1"},
+    }
+    headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
+    try:
+        resp = requests.post(url, headers=headers, json=payload, timeout=120)
+        if resp.status_code >= 400:
+            return None, t("llm_art_error", error=f"HTTP {resp.status_code}: {resp.text[:300]}")
+        try:
+            data = resp.json()
+        except ValueError as e:
+            return None, t("llm_art_error", error=e)
+    except requests.RequestException as e:
+        return None, t("llm_art_error", error=e)
+
+    def _extract_b64(obj) -> str | None:
+        if isinstance(obj, str) and len(obj) > 80:
+            return obj
+        if isinstance(obj, dict):
+            for k in ("bytesBase64Encoded", "b64", "imageBytes", "image_base64"):
+                v = obj.get(k)
+                if isinstance(v, str) and len(v) > 80:
+                    return v
+            for v in obj.values():
+                found = _extract_b64(v)
+                if found:
+                    return found
+        if isinstance(obj, list):
+            for item in obj:
+                found = _extract_b64(item)
+                if found:
+                    return found
+        return None
+
+    b64 = _extract_b64(data.get("predictions") or data)
+    if not b64:
+        return None, t("llm_gemini_no_image")
+    try:
+        raw = base64.b64decode(b64, validate=False)
+    except (binascii.Error, ValueError) as e:
+        return None, t("llm_art_error", error=e)
+    if not raw:
+        return None, t("llm_gemini_no_image")
+    return raw, None
 
 
 def _lazy_groq():
@@ -118,104 +216,100 @@ class LLMProvider:
 
 
 class GeminiProvider(LLMProvider):
-    """Proveedor Google Gemini con soporte multimodal (texto + imagen) y streaming."""
+    """Proveedor Google Gemini (``google.genai``) con multimodal y streaming."""
+
+    def _stream_with_model(
+        self,
+        client,
+        model_name: str,
+        carga_util,
+        historial,
+        system_instruction: str | None,
+    ):
+        """Generador interno: un modelo concreto y rondas de continuación."""
+        sys_inst = system_instruction or PROMPT_TECH_LEAD
+        max_tokens = _env_int("GEMINI_MAX_TOKENS", 65536)
+        temperature = _env_float("GEMINI_TEMPERATURE", 0.2)
+        max_rounds = max(1, _env_int("GEMINI_CONTINUATION_ROUNDS", 3))
+
+        config = _gemini_generation_config(
+            sys_inst,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+        history = _gemini_history_to_genai(historial)
+        chat = client.chats.create(
+            model=model_name,
+            config=config,
+            history=history or None,
+        )
+        parts = carga_util if isinstance(carga_util, list) else [carga_util]
+
+        for _round in range(max_rounds):
+            streamed_parts = []
+            trailing_finish = None
+            for chunk in chat.send_message_stream(parts):
+                txt = getattr(chunk, "text", None) or ""
+                if txt:
+                    streamed_parts.append(txt)
+                    yield _clean_model_noise(txt)
+                cands = getattr(chunk, "candidates", None) or []
+                if cands:
+                    c0 = cands[0]
+                    fr = getattr(c0, "finish_reason", None)
+                    if fr is not None:
+                        trailing_finish = fr
+
+            full_round = "".join(streamed_parts).strip()
+            if not _finish_reason_implies_truncation(trailing_finish) or not full_round:
+                return
+
+            parts = [_continuation_prompt()]
+
     def stream_chat(self, carga_util, historial=None, system_instruction: str = None):
         if not self.api_key:
             yield t("llm_onboarding_missing_gemini")
             return
-            
-        try:
-            ggenai = _lazy_ggenai()
-            types = _lazy_types()
-            cliente = ggenai.Client(api_key=self.api_key)
-            model_name = 'gemini-2.5-pro'
 
-            safety_settings = [
-                types.SafetySetting(
-                    category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-                    threshold=types.HarmBlockThreshold.BLOCK_NONE,
-                ),
-                types.SafetySetting(
-                    category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
-                    threshold=types.HarmBlockThreshold.BLOCK_NONE,
-                ),
-                types.SafetySetting(
-                    category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-                    threshold=types.HarmBlockThreshold.BLOCK_NONE,
-                ),
-                types.SafetySetting(
-                    category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-                    threshold=types.HarmBlockThreshold.BLOCK_NONE,
-                ),
-            ]
+        from src.services.google_genai import get_genai_client
 
-            max_tokens = _env_int("GEMINI_MAX_TOKENS", 65536)
-            temperature = _env_float("GEMINI_TEMPERATURE", 0.2)
-            max_rounds = max(1, _env_int("GEMINI_CONTINUATION_ROUNDS", 3))
+        client = get_genai_client(self.api_key)
 
-            config = types.GenerateContentConfig(
-                system_instruction=system_instruction or PROMPT_TECH_LEAD,
-                temperature=temperature,
-                max_output_tokens=max_tokens,
-                safety_settings=safety_settings
-            )
+        candidates = gemini_model_candidates()
+        last_error: Exception | None = None
 
-            chat = cliente.chats.create(model=model_name, config=config)
-
-            for _round in range(max_rounds):
-                streamed_parts = []
-                finish_reason = None
-                for frag in chat.send_message_stream(carga_util):
-                    if frag.text is not None:
-                        streamed_parts.append(frag.text)
-                        yield _clean_model_noise(frag.text)
-                    if hasattr(frag, "candidates") and frag.candidates:
-                        candidate = frag.candidates[0]
-                        if hasattr(candidate, "finish_reason") and candidate.finish_reason:
-                            fr_val = str(candidate.finish_reason).upper()
-                            if "MAX_TOKENS" in fr_val or "LENGTH" in fr_val:
-                                finish_reason = "length"
-
-                full_round = "".join(streamed_parts).strip()
-                if finish_reason != "length" or not full_round:
-                    return
-
-                carga_util = [_continuation_prompt()]
-
-        except Exception as e: 
-            raise
-            
-    def generar_imagen(self, prompt_artistico: str):
-        if not self.api_key: return None, t("llm_onboarding_missing_gemini")
-        try:
-            ggenai = _lazy_ggenai()
-            types = _lazy_types()
-            cliente = ggenai.Client(api_key=self.api_key)
-            
-            resultado = cliente.models.generate_images(
-                model='imagen-4.0-generate-001',
-                prompt=prompt_artistico,
-                config=types.GenerateImagesConfig(
-                    number_of_images=1,
-                    output_mime_type="image/png",
-                    aspect_ratio="1:1"
+        for idx, model_name in enumerate(candidates):
+            try:
+                yield from self._stream_with_model(
+                    client, model_name, carga_util, historial, system_instruction
                 )
-            )
-            
-            if resultado.generated_images:
-                image_bytes = resultado.generated_images[0].image.image_bytes
-                
-                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"gen_{timestamp}.png"
-                final_path = os.path.join(CARPETA_IMAGENES, filename)
-                
-                with open(final_path, "wb") as f:
-                    f.write(image_bytes)
-                    
-                return final_path, None 
-            else:
-                return None, t("llm_gemini_no_image")
-                
+                return
+            except Exception as exc:
+                last_error = exc
+                if is_gemini_model_not_found_error(exc) and idx < len(candidates) - 1:
+                    continue
+                raise
+
+        if last_error:
+            raise last_error
+
+    def generar_imagen(self, prompt_artistico: str):
+        if not self.api_key:
+            return None, t("llm_onboarding_missing_gemini")
+        try:
+            image_bytes, err = _imagen_via_rest(self.api_key, prompt_artistico)
+            if err or not image_bytes:
+                return None, err or t("llm_gemini_no_image")
+
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"gen_{timestamp}.png"
+            final_path = os.path.join(CARPETA_IMAGENES, filename)
+
+            with open(final_path, "wb") as f:
+                f.write(image_bytes)
+
+            return final_path, None
+
         except Exception as e:
             return None, t("llm_art_error", error=e)
 
@@ -239,6 +333,54 @@ class GroqProvider(LLMProvider):
         system_msgs = [m for m in mensajes if m["role"] == "system"]
         non_system = [m for m in mensajes if m["role"] != "system"]
         return system_msgs + non_system[-keep_last:]
+
+    @staticmethod
+    def _groq_model_candidates(preferred: str, fallback: str) -> list[str]:
+        """Modelos Groq a probar (sin añadir 8b por defecto: contexto/TPM muy bajo)."""
+        candidates: list[str] = []
+        for name in (preferred, fallback):
+            if name and name not in candidates:
+                candidates.append(name)
+        extra = (os.getenv("GROQ_EXTRA_FALLBACK_MODEL") or "").strip()
+        if extra and extra not in candidates:
+            candidates.append(extra)
+        return candidates or [preferred or "llama-3.3-70b-versatile"]
+
+    def _prepare_groq_messages(
+        self,
+        mensajes: list,
+        model_name: str,
+        sys_prompt: str,
+        *,
+        aggressive: bool = False,
+    ) -> list:
+        """Ajusta historial y último mensaje de usuario al presupuesto del modelo."""
+        from src.services.context_manager import truncate_text, trim_messages_to_budget
+
+        msgs = [dict(m) for m in mensajes]
+        if aggressive:
+            msgs = self._trim_history(msgs, keep_last=2)
+            if msgs:
+                msgs[0] = {"role": "system", "content": self._minimal_system_content()}
+
+        max_user_chars = _env_int(
+            "GROQ_MAX_USER_CHARS_AGGRESSIVE" if aggressive else "GROQ_MAX_USER_CHARS",
+            12_000 if aggressive else 28_000,
+        )
+        suffix = t("llm_context_truncated_suffix")
+        for idx in range(len(msgs) - 1, -1, -1):
+            if msgs[idx].get("role") == "user" and msgs[idx].get("content"):
+                new_content, _ = truncate_text(str(msgs[idx]["content"]), max_user_chars, suffix=suffix)
+                msgs[idx]["content"] = new_content
+                break
+
+        reserve = _env_int("GROQ_MAX_TOKENS", 8000) + 1024
+        return trim_messages_to_budget(
+            msgs,
+            model_name,
+            system_instruction=sys_prompt,
+            reserve_tokens=reserve,
+        )
 
     def _attempt_stream(self, cliente, model_name: str, mensajes: list,
                         max_tokens: int, temperature: float, max_rounds: int):
@@ -289,11 +431,7 @@ class GroqProvider(LLMProvider):
 
             preferred_model = os.getenv("GROQ_MODEL", self.model)
             fallback_model = os.getenv("GROQ_FALLBACK_MODEL", "llama-3.3-70b-versatile")
-            candidate_models = [preferred_model]
-            if fallback_model and fallback_model != preferred_model:
-                candidate_models.append(fallback_model)
-            if "llama-3.1-8b-instant" not in candidate_models:
-                candidate_models.append("llama-3.1-8b-instant")
+            candidate_models = self._groq_model_candidates(preferred_model, fallback_model)
 
             max_tokens = _env_int("GROQ_MAX_TOKENS", 8000)
             temperature = _env_float("GROQ_TEMPERATURE", 0.2)
@@ -303,12 +441,13 @@ class GroqProvider(LLMProvider):
             for model_name in candidate_models:
                 for attempt in range(2):
                     try:
-                        if attempt == 0:
-                            msgs = mensajes
-                        else:
-                            trimmed = self._trim_history(mensajes)
-                            trimmed[0] = {"role": "system", "content": self._minimal_system_content()}
-                            msgs = trimmed
+                        aggressive = attempt > 0
+                        msgs = self._prepare_groq_messages(
+                            mensajes,
+                            model_name,
+                            sys_prompt,
+                            aggressive=aggressive,
+                        )
                         for chunk in self._attempt_stream(
                             cliente, model_name, msgs, max_tokens, temperature, max_rounds
                         ):
@@ -321,6 +460,7 @@ class GroqProvider(LLMProvider):
                             or "too large" in err_str.lower()
                             or "rate_limit" in err_str.lower()
                             or "tokens per minute" in err_str.lower()
+                            or "request too large" in err_str.lower()
                         )
                         if attempt == 0 and is_recoverable:
                             continue

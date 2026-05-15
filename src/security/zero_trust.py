@@ -19,7 +19,6 @@ from src.core.logger import get_logger
 
 logger = get_logger(__name__)
 
-_SERVICE_SECRET = os.getenv("SERVICE_JWT_SECRET", "")
 _TOKEN_TTL = int(os.getenv("SERVICE_TOKEN_TTL", "3600"))
 
 
@@ -70,10 +69,23 @@ _INTERNAL_RBAC: dict[ServiceRole, frozenset[str]] = {
 
 
 def _get_secret() -> bytes:
-    """Returns the signing secret, falling back to APP_SECRET_KEY."""
-    secret = _SERVICE_SECRET or os.getenv("APP_SECRET_KEY", "")
+    """Returns the signing secret for service JWTs.
+
+    Production requires a dedicated ``SERVICE_JWT_SECRET`` so service tokens do
+    not share blast radius with user-data encryption or session secrets. Local
+    development may fall back to ``APP_SECRET_KEY`` to keep tests lightweight.
+    """
+    secret = os.getenv("SERVICE_JWT_SECRET", "").strip()
+    if secret:
+        return secret.encode("utf-8")
+
+    env = (os.getenv("ENVIRONMENT") or "development").strip().lower()
+    if env in {"prod", "production"}:
+        raise RuntimeError("SERVICE_JWT_SECRET is required when ENVIRONMENT=production.")
+
+    secret = os.getenv("APP_SECRET_KEY", "").strip()
     if not secret:
-        logger.warning("No SERVICE_JWT_SECRET or APP_SECRET_KEY set; using insecure default")
+        logger.warning("No SERVICE_JWT_SECRET or APP_SECRET_KEY set; using dev-only fallback")
         secret = "insecure-dev-only-default"
     return secret.encode("utf-8")
 

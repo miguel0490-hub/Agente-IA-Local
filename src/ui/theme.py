@@ -25,8 +25,7 @@ class Spacing:
 # Estilos inyectables (CSS Avanzado y Limpio)
 ESTILOS_CSS = f"""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap');
-    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@800&display=swap');
+    /* Sin @import de Google Fonts: evita bloqueo de red en cada carga (system-ui en body). */
 
     /* Theme: Custom Properties */
     :root {{
@@ -151,7 +150,6 @@ ESTILOS_CSS = f"""
     .stApp [data-testid="stFileUploader"] button {{
         cursor: pointer !important;
     }}
-    .stApp a.hub-att-chip-x,
     .stApp a[href]:not([href^="javascript:"]) {{
         cursor: pointer !important;
     }}
@@ -254,6 +252,59 @@ ESTILOS_CSS = f"""
     [data-testid="stSidebarUserContent"] {{ padding-top: 0rem !important; padding-bottom: 1rem !important; }}
     [data-testid="stSidebar"] hr {{ margin-top: 8px !important; margin-bottom: 8px !important; border-color: rgba(255,255,255,0.05) !important; }}
     [data-testid="stSidebar"] h3 {{ font-size: 0.78rem !important; text-transform: uppercase; letter-spacing: 1.5px; color: rgba(255,255,255,0.45) !important; font-weight: 600 !important; margin-bottom: 6px !important; margin-top: 4px !important; }}
+    /* Herramientas multimedia + adjuntos (debajo del perfil) */
+    [data-testid="stSidebar"] [data-testid="stExpander"] {{
+        margin-top: 0.35rem !important;
+        margin-bottom: 0.5rem !important;
+        border: 1px solid rgba(148, 163, 184, 0.22) !important;
+        border-radius: 10px !important;
+        background: rgba(15, 23, 42, 0.35) !important;
+    }}
+    [data-testid="stSidebar"] [data-testid="stExpander"] summary {{
+        font-weight: 600 !important;
+        font-size: 0.92rem !important;
+    }}
+    /* Bloque adjuntos: misma tarjeta que perfil (bienvenida) */
+    .sidebar-upload-card {{
+        background: linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.95) 100%);
+        border: 1px solid rgba(0, 225, 217, 0.2);
+        border-left: 4px solid #00E1D9;
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border-radius: 12px 12px 0 0;
+        padding: 14px 16px 10px 16px;
+        margin-top: 0.35rem;
+        margin-bottom: 0;
+    }}
+    .sidebar-upload-title {{
+        margin: 0 0 6px 0 !important;
+        font-size: 0.95rem !important;
+        color: #e2e8f0 !important;
+    }}
+    .sidebar-upload-policy {{
+        margin: 0 !important;
+        font-size: 0.72rem !important;
+        line-height: 1.45 !important;
+        color: #94a3b8 !important;
+    }}
+    [data-testid="stSidebar"] [data-testid="stElementContainer"]:has(.sidebar-upload-card) + [data-testid="stElementContainer"] [data-testid="stFileUploader"] {{
+        margin-top: 0 !important;
+        margin-bottom: 0.75rem !important;
+    }}
+    [data-testid="stSidebar"] [data-testid="stElementContainer"]:has(.sidebar-upload-card) + [data-testid="stElementContainer"] [data-testid="stFileUploader"] section,
+    [data-testid="stSidebar"] [data-testid="stElementContainer"]:has(.sidebar-upload-card) + [data-testid="stElementContainer"] [data-testid="stFileUploader"] [data-testid="stFileUploaderDropzone"] {{
+        background: linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.95) 100%) !important;
+        border: 1px solid rgba(0, 225, 217, 0.2) !important;
+        border-top: none !important;
+        border-left: 4px solid #00E1D9 !important;
+        border-radius: 0 0 12px 12px !important;
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3) !important;
+    }}
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p strong {{
+        font-size: 0.9rem !important;
+        color: #e2e8f0 !important;
+    }}
 
     /* Selectores en sidebar: aspecto de desplegable neutro (no botón primario) */
     [data-testid="stSidebar"] div[data-baseweb="select"] > div {{
@@ -473,45 +524,6 @@ ESTILOS_CSS = f"""
         opacity: 1 !important;
     }}
 
-    /* Chips adjuntos (markdown): cruz en esquina, visible al hover */
-    .hub-att-chip-wrap {{
-        position: relative;
-        display: block;
-    }}
-    a.hub-att-chip-x {{
-        position: absolute;
-        top: 5px;
-        right: 5px;
-        width: 22px;
-        height: 22px;
-        line-height: 20px;
-        text-align: center;
-        border-radius: 7px;
-        background: rgba(15, 23, 42, 0.78);
-        color: #e2e8f0;
-        font-size: 14px;
-        font-weight: 700;
-        text-decoration: none !important;
-        opacity: 0;
-        transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
-        z-index: 4;
-        box-sizing: border-box;
-        border: 1px solid rgba(148, 163, 184, 0.25);
-    }}
-    .hub-att-chip-wrap:hover a.hub-att-chip-x {{
-        opacity: 1;
-    }}
-    a.hub-att-chip-x:hover {{
-        color: #fff !important;
-        background: rgba(220, 38, 38, 0.9) !important;
-        border-color: rgba(248, 113, 113, 0.55) !important;
-    }}
-    @media (hover: none) {{
-        a.hub-att-chip-x {{
-            opacity: 0.55;
-        }}
-    }}
-
     /* ── Cajas de Texto y Formularios ───────────────────────── */
     div[data-testid="stTextInput"] label p,
     div[data-testid="stPasswordInput"] label p {{ color: #F8FAFC !important; font-weight: 600 !important; font-size: 14px !important; }}
@@ -613,14 +625,30 @@ ESTILOS_CSS = f"""
     div[data-baseweb="select"] svg {{ fill: {Colors.PRIMARY} !important; width: 1.5rem !important; height: 1.5rem !important; visibility: visible !important; display: block !important; }}
 
     /* ── Diálogos, Tabs y Configuración ─────────────────────── */
+    /* --- ELIMINAR LÍNEAS Y PESTAÑAS FANTASMA EN TABS --- */
+    div[data-testid="stTabs"] [data-baseweb="tab-list"] {{
+        border-bottom: none !important;
+    }}
+    div[data-testid="stTabs"] [data-baseweb="tab-border"] {{
+        display: none !important;
+        height: 0px !important;
+    }}
+    div[data-testid="stTabs"] [data-baseweb="tab-highlight"] {{
+        display: none !important;
+        visibility: hidden !important;
+    }}
+    div[data-testid="stTabs"] button {{
+        border: none !important;
+        box-shadow: none !important;
+    }}
     div[data-testid="stTabs"] {{ background-color: #1E293B !important; border-radius: 12px !important; padding: 1.5rem !important; box-shadow: 0 4px 15px rgba(0,0,0,0.3) !important; }}
-    /* Fichas de pestañas: misma familia visual que botones neón (activa = gradiente) */
+    /* Fichas de pestañas (sin bordes heredados; activa resaltada por fondo) */
     div[data-testid="stTabs"] button[data-baseweb="tab"] {{
         border-radius: 12px !important;
         margin: 4px 8px 4px 0 !important;
         padding: 0.45rem 1rem !important;
         min-height: 44px !important;
-        border: 1px solid rgba(148, 163, 184, 0.35) !important;
+        border: none !important;
         background: rgba(15, 23, 42, 0.88) !important;
         background-image: none !important;
         box-shadow: none !important;
@@ -632,19 +660,19 @@ ESTILOS_CSS = f"""
         font-weight: 700 !important;
     }}
     div[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="false"]:hover {{
-        border-color: rgba(0, 242, 254, 0.4) !important;
+        background: rgba(30, 41, 59, 0.95) !important;
         box-shadow: 0 0 0 1px rgba(0, 242, 254, 0.12) !important;
     }}
+    div[data-testid="stTabs"] [aria-selected="true"],
     div[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"] {{
-        background: linear-gradient(90deg, #00F2FE, #4FACFE) !important;
-        border: 1px solid rgba(0, 242, 254, 0.55) !important;
-        box-shadow:
-            0 0 22px rgba(0, 242, 254, 0.38),
-            0 4px 14px rgba(0, 0, 0, 0.28) !important;
+        color: #00F2FE !important;
+        background-color: rgba(0, 242, 254, 0.15) !important;
+        border-radius: 8px 8px 0 0 !important;
+        box-shadow: none !important;
     }}
     div[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"] p {{
-        color: #0F172A !important;
-        -webkit-text-fill-color: #0F172A !important;
+        color: #00F2FE !important;
+        -webkit-text-fill-color: #00F2FE !important;
     }}
     div[data-testid="stDialog"] div[role="dialog"] {{ background-color: var(--color-dialog-bg) !important; border: 1px solid #1E293B; }}
     div[data-testid="stDialog"] div[role="dialog"] > div:first-child {{

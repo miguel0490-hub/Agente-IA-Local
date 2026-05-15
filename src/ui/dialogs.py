@@ -22,6 +22,7 @@ class AppDialogs:
     panel_admin: Callable
     panel_contacto: Callable
     panel_conversor: Callable
+    render_converter_body: Callable[[], None]
     get_roles: Callable
     cambiar_rol: Callable
 
@@ -53,7 +54,22 @@ def create_dialogs(
 
     @st.dialog(t("dialog_converter"))
     def panel_conversor():
-        render_converter_dialog(carpeta_imagenes, secure_upload_check_fn, run_conversion_fn, guardar_memoria_fn)
+        render_converter_dialog(
+            carpeta_imagenes,
+            secure_upload_check_fn,
+            run_conversion_fn,
+            guardar_memoria_fn,
+            widget_key_prefix="",
+        )
+
+    def render_converter_body():
+        render_converter_dialog(
+            carpeta_imagenes,
+            secure_upload_check_fn,
+            run_conversion_fn,
+            guardar_memoria_fn,
+            widget_key_prefix="mm_hub_conv_",
+        )
 
     def get_roles():
         from src.core.i18n import get_language
@@ -73,6 +89,7 @@ def create_dialogs(
         panel_admin=panel_admin,
         panel_contacto=panel_contacto,
         panel_conversor=panel_conversor,
+        render_converter_body=render_converter_body,
         get_roles=get_roles,
         cambiar_rol=cambiar_rol,
     )

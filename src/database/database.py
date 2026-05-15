@@ -27,6 +27,7 @@ from sqlalchemy import (
     inspect,
 )
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
 from sqlalchemy.exc import IntegrityError
 
 from src.core.logger import get_logger
@@ -40,13 +41,21 @@ if DATABASE_URL.startswith("postgres://"):
 
 if DATABASE_URL.startswith("sqlite:///"):
     os.makedirs("data", exist_ok=True)
+    # NullPool evita conexiones sqlite3 vivas en QueuePool (ResourceWarning en tests/GC).
     engine = create_engine(
         DATABASE_URL,
         connect_args={"check_same_thread": False},
-        pool_pre_ping=True,
+        poolclass=NullPool,
     )
 else:
-    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+    pool_size = int(os.getenv("DB_POOL_SIZE", "5"))
+    max_overflow = int(os.getenv("DB_MAX_OVERFLOW", "10"))
+    engine = create_engine(
+        DATABASE_URL,
+        pool_pre_ping=True,
+        pool_size=pool_size,
+        max_overflow=max_overflow,
+    )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

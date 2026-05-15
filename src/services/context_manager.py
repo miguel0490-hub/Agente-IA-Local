@@ -19,6 +19,7 @@ _CHARS_PER_TOKEN_ESTIMATE = 4
 _MODEL_BUDGETS: dict[str, int] = {
     "gemini-2.5-pro": 1_000_000,
     "llama-3.3-70b-versatile": 128_000,
+    "llama-3.1-8b-instant": 8_192,
     "openrouter/auto": 128_000,
 }
 
@@ -52,6 +53,17 @@ def get_model_budget(model_name: str) -> int:
         if key in (model_name or "").lower():
             return budget
     return _DEFAULT_BUDGET
+
+
+def truncate_text(text: str, max_chars: int, *, suffix: str | None = None) -> tuple[str, bool]:
+    """Recorta texto plano; devuelve (texto, hubo_recorte)."""
+    if not text or max_chars <= 0 or len(text) <= max_chars:
+        return text or "", False
+    end = max(0, max_chars - len(suffix or "")) if suffix else max_chars
+    trimmed = text[:end].rstrip()
+    if suffix:
+        trimmed = trimmed + suffix
+    return trimmed, True
 
 
 def trim_messages_to_budget(

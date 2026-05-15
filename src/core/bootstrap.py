@@ -25,6 +25,15 @@ def start_database() -> None:
     cleanup_expired_tokens()
 
 
+@st.cache_resource(show_spinner=False)
+def reset_login_throttle_on_boot() -> None:
+    """Limpia rate limit / backoff de login una vez por proceso (desbloquea cuentas tras pruebas)."""
+    from src.core.security import reset_login_throttle_state
+
+    reset_login_throttle_state()
+    return True
+
+
 def run_garbage_collector() -> None:
     """Removes temp files older than 24 hours."""
     now = time.time()
@@ -58,6 +67,7 @@ def _start_background_services() -> None:
 def bootstrap_app() -> None:
     """Runs all one-time initialization: DB, session state, GC, output dirs."""
     start_database()
+    reset_login_throttle_on_boot()
 
     initialize_session_state()
 

@@ -13,6 +13,48 @@ import extra_streamlit_components as stx
 from src.core.auth_cookies import set_auth_cookie
 from src.core.i18n import t
 
+_USER_SESSION_KEYS = frozenset(
+    {
+        "user_id",
+        "api_keys",
+        "chat_id",
+        "onboarding_done",
+        "messages",
+        "rol_activo",
+        "motor_activo_idx",
+        "selector_rol",
+        "onboarding_step",
+        "temp_keys",
+        "auto_close_sidebar",
+        "temp_custom_models",
+        "show_settings",
+        "show_contact",
+        "show_admin",
+        "show_notifications",
+        "form_clear_counter",
+        "security_events",
+        "last_activity_ts",
+        "staged_attachments",
+        "attachment_hub_uploader_inc",
+        "confirm_delete_chat",
+        "pending_conversion_jobs",
+        "pending_stt_jobs",
+        "suggested_format",
+        "last_motor_selected",
+        "chat_list",
+        "active_role",
+        "motor_manual_selector",
+        "sidebar_lang_selectbox",
+    }
+)
+
+
+def clear_user_session() -> None:
+    """Clears only app-owned user state, preserving Streamlit/widget internals."""
+    for key in _USER_SESSION_KEYS:
+        if key in st.session_state:
+            del st.session_state[key]
+
 
 def init_cookie_manager():
     """Initializes and caches the CookieManager singleton in session_state."""
@@ -34,8 +76,7 @@ def check_idle_timeout(cookie_manager, clear_remember_token_fn) -> None:
     if now_ts - last_ts > idle_timeout_sec:
         cookie_manager.delete("auth_token")
         clear_remember_token_fn(st.session_state.user_id)
-        for k in list(st.session_state.keys()):
-            del st.session_state[k]
+        clear_user_session()
         st.warning(t("session_idle_expired"))
         st.rerun()
 
@@ -57,7 +98,11 @@ def try_auto_login(cookie_manager, verify_remember_token_fn, get_user_api_keys_f
         cookie_manager.delete("auth_token")
         return
 
+    from src.core.streamlit_cache import invalidate_sidebar_cache
+
     st.session_state.user_id = remembered_user_id
+    st.session_state.pop("_app_dialogs", None)
+    invalidate_sidebar_cache()
     keys = get_user_api_keys_fn(remembered_user_id)
     st.session_state.api_keys = keys
     if keys:

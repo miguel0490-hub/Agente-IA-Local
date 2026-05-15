@@ -27,7 +27,10 @@ def _get_header_ci(headers: Any, *names: str) -> str | None:
 def get_remote_address() -> str:
     """
     Returns client IP when Streamlit exposes request headers (typical behind Nginx).
-    Falls back to 'unknown' for local dev without proxy headers.
+
+    En ejecución local sin proxy, Streamlit a menudo no expone la IP; en ese caso se
+    devuelve el literal 'unknown'. El login no debe usar ese valor como cubo único de
+    rate limit por IP (ver auth_gate).
     """
     try:
         import streamlit as st

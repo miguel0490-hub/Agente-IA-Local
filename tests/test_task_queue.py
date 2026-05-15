@@ -61,6 +61,7 @@ def test_enqueue_rag_indexing_ok(monkeypatch):
 
 
 def test_get_redis_connection_handles_exception(monkeypatch):
+    task_queue._redis_connection = None
     class DummyRedis:
         @staticmethod
         def from_url(*args, **kwargs):
@@ -100,7 +101,7 @@ def test_enqueue_conversion_and_transcription_ok(monkeypatch):
     monkeypatch.setattr(task_queue, "Queue", DummyQueue)
     monkeypatch.setattr(task_queue, "_get_redis_connection", lambda: object())
     assert task_queue.enqueue_conversion("in", "out") == "job-conv"
-    assert task_queue.enqueue_transcription(b"a", "f.mp3", "k") == "job-stt"
+    assert task_queue.enqueue_transcription(b"a", "f.mp3", 7) == "job-stt"
 
 
 def test_get_job_status_without_job_or_connection(monkeypatch):

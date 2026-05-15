@@ -5,6 +5,7 @@ from __future__ import annotations
 import streamlit as st
 from src.agents.capabilities import CAPABILITY_PROFILES
 from src.core.i18n import t
+from src.core.streamlit_cache import invalidate_sidebar_cache
 from src.ui.sidebar.engine_options import motor_disponibles_labels
 
 
@@ -65,6 +66,10 @@ def render_main_sidebar_panel(
         st.divider()
 
         st.markdown(t("engine_active"))
+        st.markdown(
+            '<span class="sidebar-motor-select-anchor" aria-hidden="true"></span>',
+            unsafe_allow_html=True,
+        )
         motores_disponibles = motor_disponibles_labels(st.session_state.api_keys)
         idx = int(st.session_state.motor_activo_idx)
         if idx < 0 or idx >= len(motores_disponibles):
@@ -81,7 +86,6 @@ def render_main_sidebar_panel(
 
         st.divider()
 
-        st.markdown('<div class="danger-btn">', unsafe_allow_html=True)
         c1, c2 = st.columns(2)
         with c1:
             if st.button(t("clear_messages"), use_container_width=True, key="btn_borrar_memoria"):
@@ -107,6 +111,7 @@ def render_main_sidebar_panel(
                         delete_chat_fn(st.session_state.chat_id)
                         st.session_state.chat_id = None
                         st.session_state.messages = []
+                        invalidate_sidebar_cache()
                         st.session_state.form_clear_counter += 1
                         st.session_state.confirm_delete_chat = False
                         st.session_state.staged_attachments = []
@@ -118,6 +123,5 @@ def render_main_sidebar_panel(
                     if st.button(t("cancel_button"), use_container_width=True, key="btn_cancelar_eliminar"):
                         st.session_state.confirm_delete_chat = False
                         st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
 
     return motor, system_instruction_activo

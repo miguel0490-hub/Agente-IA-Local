@@ -9,11 +9,13 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import warnings
 from datetime import datetime, timedelta, timezone
 from unittest import mock
 
 import pytest
 from sqlalchemy import create_engine, text, MetaData
+from sqlalchemy.pool import StaticPool
 
 # ---------------------------------------------------------------------------
 # Fixtures: in-memory SQLite engine that replaces the production engine
@@ -78,24 +80,35 @@ CREATE TABLE IF NOT EXISTS audit_log (
 @pytest.fixture(autouse=True)
 def setup_db(monkeypatch):
     """Creates fresh in-memory tables and patches the production engine."""
-    test_engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=r".*default datetime adapter.*",
+            category=DeprecationWarning,
+        )
+        test_engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
 
-    with test_engine.begin() as conn:
-        for statement in _CREATE_TABLES_SQL.strip().split(";"):
-            stmt = statement.strip()
-            if stmt:
-                conn.execute(text(stmt))
+        with test_engine.begin() as conn:
+            for statement in _CREATE_TABLES_SQL.strip().split(";"):
+                stmt = statement.strip()
+                if stmt:
+                    conn.execute(text(stmt))
 
-    import src.database.database as db_mod
-    monkeypatch.setattr(db_mod, "engine", test_engine)
+        import src.database.database as db_mod
+        monkeypatch.setattr(db_mod, "engine", test_engine)
 
-    import src.compliance.audit_log as audit_mod
-    monkeypatch.setattr(audit_mod, "engine", test_engine)
+        import src.compliance.audit_log as audit_mod
+        monkeypatch.setattr(audit_mod, "engine", test_engine)
 
-    import src.compliance.gdpr as gdpr_mod
-    monkeypatch.setattr(gdpr_mod, "engine", test_engine)
+        import src.compliance.gdpr as gdpr_mod
+        monkeypatch.setattr(gdpr_mod, "engine", test_engine)
 
-    yield test_engine
+        yield test_engine
+        test_engine.dispose()
 
 
 def _seed_user(engine, uid=1, email="alice@example.com", username="alice"):

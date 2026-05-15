@@ -15,17 +15,34 @@ except Exception:  # pragma: no cover
     Job = None
 
 
+_redis_connection: Any = None
+_redis_url_cached: str | None = None
+
+
 def _get_redis_connection():
+    global _redis_connection, _redis_url_cached
     if not redis:
         return None
     redis_url = os.getenv("REDIS_URL", "").strip()
     if not redis_url:
         return None
+    if _redis_connection is not None and _redis_url_cached == redis_url:
+        try:
+            _redis_connection.ping()
+            return _redis_connection
+        except Exception:
+            _redis_connection = None
+            _redis_url_cached = None
     try:
-        conn = redis.from_url(redis_url, decode_responses=True, socket_timeout=1.5)
+        # RQ serializa jobs con pickle; decode_responses=True rompe payloads binarios.
+        conn = redis.from_url(redis_url, decode_responses=False, socket_timeout=1.5)
         conn.ping()
+        _redis_connection = conn
+        _redis_url_cached = redis_url
         return conn
     except Exception:
+        _redis_connection = None
+        _redis_url_cached = None
         return None
 
 
@@ -54,13 +71,17 @@ def enqueue_conversion(input_path: str, output_path: str) -> Optional[str]:
     return job.id if job else None
 
 
-def enqueue_transcription(audio_bytes: bytes, filename: str, api_key: str) -> Optional[str]:
-    """Enqueues STT transcription task; returns job id or None if unavailable."""
+def enqueue_transcription(audio_bytes: bytes, filename: str, user_id: int) -> Optional[str]:
+    """Enqueues STT transcription task; returns job id or None if unavailable.
+
+    No se envía la API key por Redis: el worker resuelve GROQ desde la BD del usuario
+    (o variable de entorno GROQ_API_KEY como respaldo operativo).
+    """
     job = _enqueue_task(
         "src.services.background_tasks.transcribe_audio_task",
         audio_bytes,
         filename,
-        api_key,
+        int(user_id),
         timeout=1800,
     )
     return job.id if job else None

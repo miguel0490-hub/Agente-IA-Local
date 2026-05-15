@@ -32,6 +32,14 @@ jobs:
       - name: Comprobar dependencias mínimas declaradas
         run: grep -qE '^Markdown>=' requirements.txt || (echo "::error::requirements.txt debe incluir Markdown>=... (fusiona origin/master)" && exit 1)
 
+      - name: Verificar CSS estático sincronizado con theme
+        run: |
+          python scripts/generate_static_css.py
+          git diff --exit-code .streamlit/static/superagente.css || (
+            echo "::error::.streamlit/static/superagente.css no coincide con theme.py. Ejecuta scripts/generate_static_css.py y commitea."
+            exit 1
+          )
+
       - name: Install Playwright Browsers
         run: python -m playwright install --with-deps chromium
 
