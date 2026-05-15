@@ -1,8 +1,7 @@
+# Legacy: SBOM y firma integrados en pipeline.yml
 name: Supply Chain Security
 
 on:
-  push:
-    branches: [main]
   release:
     types: [published]
   workflow_dispatch:

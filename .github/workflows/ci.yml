@@ -1,9 +1,8 @@
+# Legacy: usar .github/workflows/pipeline.yml (SuperAgente Pipeline)
 name: CI
 
 on:
-  push:
-    branches: [main, master]
-  pull_request:
+  workflow_dispatch:
 
 # Evita el aviso de deprecación Node 20 en actions hasta que los runners usen Node 24 por defecto.
 env:

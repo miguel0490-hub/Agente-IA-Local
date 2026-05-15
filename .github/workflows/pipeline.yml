@@ -1,0 +1,456 @@
+# Pipeline completo: calidad → tests → seguridad → Docker → despliegue
+name: SuperAgente Pipeline
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      run_e2e:
+        description: Ejecutar tests E2E (requiere levantar Streamlit en el runner)
+        type: boolean
+        default: false
+      skip_deploy:
+        description: Omitir despliegue aunque sea push a master
+        type: boolean
+        default: false
+
+concurrency:
+  group: pipeline-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  PYTHON_VERSION: "3.11"
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+permissions:
+  contents: read
+  packages: write
+  security-events: write
+  pull-requests: write
+  attestations: write
+  id-token: write
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────
+  quality:
+    name: Calidad y dependencias
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Comprobar dependencias mínimas
+        run: |
+          grep -qE '^Markdown>=' requirements.txt
+          grep -qE '^google-genai>=' requirements.txt
+
+      - name: Verificar CSS estático vs theme.py
+        run: |
+          python scripts/generate_static_css.py
+          git diff --exit-code .streamlit/static/superagente.css || (
+            echo "::error::Ejecuta scripts/generate_static_css.py y commitea superagente.css"
+            exit 1
+          )
+
+      - name: Preflight (modo CI)
+        env:
+          GEMINI_API_KEY: ci-placeholder
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+          REDIS_URL: redis://:ci@localhost:6379/0
+        run: bash scripts/preflight_deploy.sh
+
+  # ─────────────────────────────────────────────────────────────────────────
+  test:
+    name: Tests — ${{ matrix.suite }}
+    needs: quality
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [unit, integration, chaos, performance]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Instalar Playwright (unit)
+        if: matrix.suite == 'unit'
+        run: python -m playwright install --with-deps chromium
+
+      - name: Ejecutar suite
+        run: |
+          case "${{ matrix.suite }}" in
+            unit)
+              python -m pytest --ignore=tests/e2e --ignore=tests/load --cov-fail-under=100
+              ;;
+            integration)
+              python -m pytest tests/integration/ -v -o "addopts=" --tb=short
+              ;;
+            chaos)
+              python -m pytest tests/chaos/ -v -o "addopts=" --tb=short
+              ;;
+            performance)
+              python -m pytest tests/performance/ -v -o "addopts=" --tb=short
+              ;;
+          esac
+
+  test-e2e:
+    name: Tests E2E (Playwright)
+    needs: quality
+    if: github.event_name == 'workflow_dispatch' && inputs.run_e2e == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Instalar dependencias y Playwright
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Arrancar Streamlit en segundo plano
+        env:
+          DATABASE_URL: sqlite:///data/ci_e2e.db
+          LOGIN_REQUIRE_REDIS: "0"
+        run: |
+          export GEMINI_API_KEY="${{ secrets.GEMINI_API_KEY }}"
+          export GEMINI_API_KEY="${GEMINI_API_KEY:-ci-placeholder}"
+          mkdir -p data
+          streamlit run app.py --server.headless true --server.port 8501 &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8501/_stcore/health && break
+            sleep 2
+          done
+          curl -sf http://127.0.0.1:8501/_stcore/health
+
+      - name: Tests E2E
+        env:
+          E2E_BASE_URL: http://127.0.0.1:8501
+        run: python -m pytest tests/e2e/ -v -o "addopts=" --tb=short
+
+  # ─────────────────────────────────────────────────────────────────────────
+  dependency-audit:
+    name: Auditoría pip
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: pip-audit
+        run: pip install pip-audit && pip-audit -r requirements.txt --desc on
+
+  dependency-review:
+    name: Dependency Review (PR)
+    needs: quality
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          deny-licenses: GPL-3.0, AGPL-3.0
+          comment-summary-in-pr: always
+
+  dead-code:
+    name: Código muerto (vulture)
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install "vulture>=2.14"
+      - run: python -m vulture src app.py --min-confidence 90
+
+  security-sast:
+    name: SAST (Bandit)
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install bandit
+      - run: bandit -r src -ll -ii --skip B101 -f json -o bandit-report.json || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bandit-report
+          path: bandit-report.json
+          retention-days: 30
+
+  secret-scan:
+    name: Secretos (Gitleaks)
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+        continue-on-error: true
+
+  # ─────────────────────────────────────────────────────────────────────────
+  docker-scan:
+    name: Docker build + Trivy
+    needs: [test, dependency-audit, dead-code, security-sast]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build imagen
+        run: docker build -t superagente-ci:${{ github.sha }} .
+
+      - name: Trivy (HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: superagente-ci:${{ github.sha }}
+          format: table
+          exit-code: 1
+          severity: HIGH,CRITICAL
+
+      - name: Guardar imagen como artefacto (solo PR)
+        if: github.event_name == 'pull_request'
+        run: docker save superagente-ci:${{ github.sha }} | gzip > superagente-image.tar.gz
+
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'pull_request'
+        with:
+          name: docker-image-tar
+          path: superagente-image.tar.gz
+          retention-days: 3
+
+  sbom:
+    name: SBOM CycloneDX
+    needs: docker-scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: |
+          pip install cyclonedx-bom>=4.0.0
+          cyclonedx-py requirements \
+            --input-file requirements.txt \
+            --output-format json \
+            --output-file sbom-source-cyclonedx.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom-source-cyclonedx
+          path: sbom-source-cyclonedx.json
+          retention-days: 90
+
+  build-push:
+    name: Build y push GHCR
+    needs: [docker-scan, sbom, secret-scan]
+    if: |
+      (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') &&
+      (
+        (github.event_name == 'push') ||
+        (github.event_name == 'workflow_dispatch' && inputs.skip_deploy != true)
+      )
+    runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=
+            type=ref,event=branch
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - uses: sigstore/cosign-installer@v3
+
+      - name: Firmar imagen (Cosign keyless)
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}"
+          cosign sign --yes "${IMAGE}"
+
+      - uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          format: cyclonedx-json
+          output-file: sbom-container-cyclonedx.json
+
+      - name: Adjuntar SBOM a la imagen
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}"
+          cosign attest --yes \
+            --predicate sbom-container-cyclonedx.json \
+            --type cyclonedx \
+            "${IMAGE}"
+
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom-container-cyclonedx
+          path: sbom-container-cyclonedx.json
+          retention-days: 90
+
+  deploy-staging:
+    name: Deploy staging
+    needs: build-push
+    if: |
+      needs.build-push.result == 'success'
+      && github.event_name == 'push'
+      && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resumen de imagen
+        run: |
+          echo "## Staging deploy" >> $GITHUB_STEP_SUMMARY
+          echo "Image: \`${{ needs.build-push.outputs.image }}@${{ needs.build-push.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Deploy (configurar en Environment secrets)
+        env:
+          IMAGE: ${{ needs.build-push.outputs.image }}@${{ needs.build-push.outputs.digest }}
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          if [ -z "$STAGING_HOST" ]; then
+            echo "::warning::Define STAGING_HOST y STAGING_SSH_KEY en el environment 'staging' para despliegue automático."
+            echo "Imagen lista: $IMAGE"
+            exit 0
+          fi
+          echo "Despliegue SSH a $STAGING_HOST — personaliza este paso (docker compose pull, kubectl, etc.)"
+          # Ejemplo:
+          # echo "$STAGING_SSH_KEY" > key.pem && chmod 600 key.pem
+          # ssh -i key.pem deploy@"$STAGING_HOST" "cd /opt/superagente && docker compose pull && docker compose up -d"
+
+  deploy-production:
+    name: Deploy production
+    needs: [deploy-staging, build-push]
+    if: |
+      needs.deploy-staging.result == 'success'
+      && github.event_name == 'push'
+      && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://superagenteiapro.com
+    steps:
+      - name: Resumen producción
+        run: |
+          echo "## Production deploy (aprobación manual)" >> $GITHUB_STEP_SUMMARY
+          echo "Image: \`${{ needs.build-push.outputs.image }}@${{ needs.build-push.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Deploy production (configurar secrets)
+        env:
+          PRODUCTION_HOST: ${{ secrets.PRODUCTION_HOST }}
+        run: |
+          if [ -z "$PRODUCTION_HOST" ]; then
+            echo "::warning::Define PRODUCTION_HOST en environment 'production' para despliegue automático."
+            exit 0
+          fi
+          echo "Despliegue a $PRODUCTION_HOST — personaliza este paso."
+
+  pipeline-summary:
+    name: Resumen del pipeline
+    needs:
+      - quality
+      - test
+      - dependency-audit
+      - dead-code
+      - security-sast
+      - secret-scan
+      - docker-scan
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Estado final
+        run: |
+          echo "## SuperAgente Pipeline" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Resultado |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|-----------|" >> $GITHUB_STEP_SUMMARY
+          echo "| quality | ${{ needs.quality.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| test (matrix) | ${{ needs.test.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| dependency-audit | ${{ needs.dependency-audit.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| dead-code | ${{ needs.dead-code.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| security-sast | ${{ needs.security-sast.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| secret-scan | ${{ needs.secret-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| docker-scan | ${{ needs.docker-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Fallar si algún job crítico falló
+        if: |
+          needs.quality.result == 'failure' ||
+          needs.test.result == 'failure' ||
+          needs.dependency-audit.result == 'failure' ||
+          needs.dead-code.result == 'failure' ||
+          needs.docker-scan.result == 'failure'
+        run: exit 1
