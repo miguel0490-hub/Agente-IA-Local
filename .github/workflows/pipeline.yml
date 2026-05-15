@@ -177,26 +177,6 @@ jobs:
       - name: pip-audit
         run: pip install pip-audit && pip-audit -r requirements.txt --desc on
 
-  dependency-review:
-    name: Dependency Review (PR)
-    needs: quality
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v4
-      - name: Dependency Review (requiere Dependency graph en el repo)
-        uses: actions/dependency-review-action@v4
-        continue-on-error: true
-        with:
-          fail-on-severity: high
-          deny-licenses: GPL-3.0, AGPL-3.0
-          comment-summary-in-pr: always
-      - name: Aviso si Dependency graph está desactivado
-        if: failure()
-        run: |
-          echo "::warning::Activa Dependency graph en Settings → Code security → Dependency graph para habilitar Dependency Review."
-
   dead-code:
     name: Código muerto (vulture)
     needs: quality

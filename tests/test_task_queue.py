@@ -59,11 +59,13 @@ def test_get_redis_connection_reuses_cached_connection(monkeypatch):
 
 
 def test_get_redis_connection_stale_cache_reconnects(monkeypatch):
-    state = {"fail_ping": False}
+    pings = {"n": 0}
 
     class Conn:
         def ping(self):
-            if state["fail_ping"]:
+            pings["n"] += 1
+            # 1ª ping al crear; 2ª ping sobre caché falla; 3ª ping tras reconectar OK
+            if pings["n"] == 2:
                 raise ConnectionError("stale connection")
             return True
 
@@ -77,7 +79,6 @@ def test_get_redis_connection_stale_cache_reconnects(monkeypatch):
     task_queue._redis_connection = None
     task_queue._redis_url_cached = None
     assert task_queue._get_redis_connection() is not None
-    state["fail_ping"] = True
     assert task_queue._get_redis_connection() is not None
 
 
