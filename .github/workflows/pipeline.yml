@@ -235,7 +235,7 @@ jobs:
         run: docker build -t superagente-ci:${{ github.sha }} .
 
       - name: Trivy (vulnerabilidades HIGH/CRITICAL)
-        uses: aquasecurity/trivy-action@0.29.0
+        uses: aquasecurity/trivy-action@master
         with:
           image-ref: superagente-ci:${{ github.sha }}
           format: table
