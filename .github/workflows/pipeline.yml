@@ -253,12 +253,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      - run: |
+      - name: Generar SBOM desde requirements.txt
+        run: |
           pip install cyclonedx-bom>=4.0.0
-          cyclonedx-py requirements \
-            --input-file requirements.txt \
-            --output-format json \
-            --output-file sbom-source-cyclonedx.json
+          cyclonedx-py requirements requirements.txt --of JSON -o sbom-source-cyclonedx.json
       - uses: actions/upload-artifact@v4
         with:
           name: sbom-source-cyclonedx
