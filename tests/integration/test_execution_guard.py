@@ -79,7 +79,8 @@ class TestExecutionTimeoutGuard:
     def test_real_process_guard_and_kill(self):
         proc = subprocess.Popen(
             [sys.executable, "-c", "import time; time.sleep(60)"],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
         try:
             ok = self.guard.guard(

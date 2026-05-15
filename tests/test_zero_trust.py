@@ -32,6 +32,12 @@ from src.security.secrets_manager import (
 
 
 class TestServiceTokens:
+    def test_service_secret_required_in_production(self, monkeypatch):
+        monkeypatch.delenv("SERVICE_JWT_SECRET", raising=False)
+        monkeypatch.setenv("ENVIRONMENT", "production")
+        with pytest.raises(RuntimeError, match="SERVICE_JWT_SECRET"):
+            create_service_token("test-app", ServiceRole.GATEWAY)
+
     def test_create_and_verify_token(self):
         token = create_service_token("test-app", ServiceRole.GATEWAY)
         identity = verify_service_token(token)

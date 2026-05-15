@@ -1,8 +1,7 @@
+# Legacy: SBOM y firma integrados en pipeline.yml
 name: Supply Chain Security
 
 on:
-  push:
-    branches: [main]
   release:
     types: [published]
   workflow_dispatch:
@@ -30,10 +29,7 @@ jobs:
 
       - name: Generate CycloneDX SBOM from requirements
         run: |
-          cyclonedx-py requirements \
-            --input-file requirements.txt \
-            --output-format json \
-            --output-file sbom-source-cyclonedx.json
+          cyclonedx-py requirements requirements.txt --of JSON -o sbom-source-cyclonedx.json
 
       - name: Upload source SBOM
         uses: actions/upload-artifact@v4

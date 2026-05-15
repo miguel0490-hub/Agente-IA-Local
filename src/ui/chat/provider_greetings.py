@@ -1,4 +1,4 @@
-"""Saludos iniciales personalizados al seleccionar cada motor / proveedor de IA."""
+"""Saludos iniciales al seleccionar cada motor / proveedor (textos vía i18n)."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ from typing import Any
 
 import streamlit as st
 
+from src.core.i18n import t
 from src.core.sanitizer import sanitize_markdown_text
 
 
@@ -13,70 +14,48 @@ def _has_user_or_assistant_messages(messages: list[dict[str, Any]]) -> bool:
     return any(m.get("role") in ("user", "assistant") for m in messages)
 
 
-def build_provider_greeting(motor: str) -> str:
-    """Devuelve un saludo en Markdown según el motor seleccionado."""
+def _motor_greeting_kind(motor: str) -> str:
+    """Clasifica el motor por etiqueta traducida (cualquier idioma activo)."""
     if motor.startswith("🤖 "):
-        name = motor.replace("🤖 ", "", 1).strip() or "tu modelo conectado"
-        return (
-            f"### 👋 Hola, soy **{name}**\n\n"
-            "Estoy conectada por API compatible con OpenAI (OpenAI-like). "
-            "Puedo ayudarte con **texto**, razonamiento, código y tareas de agente "
-            "según las capacidades del modelo que tienes detrás de esta URL.\n\n"
-            "**Cuéntame qué necesitas** y trabajamos en ello."
-        )
+        return "custom"
+    if "Whisper" in motor or ("STT" in motor and "Groq" in motor):
+        return "whisper"
+    if "TTS" in motor or "Text-to-Speech" in motor:
+        return "tts"
+    if (
+        "Asset Generator" in motor
+        or "Generador" in motor
+        or "Text to Image" in motor
+        or "Texto a Imagen" in motor
+    ):
+        return "image"
+    if "OpenRouter" in motor:
+        return "openrouter"
+    if "Gemini" in motor:
+        return "gemini"
+    if "Groq" in motor:
+        return "groq"
+    return "generic"
 
-    catalog: dict[str, str] = {
-        "Groq Llama 3.3 (Lead Software Engineer / Creador)": (
-            "### 👋 Hola, soy **Groq (Llama 3.3)**\n\n"
-            "Estoy optimizada para **velocidad** y **código**: diseño de software, revisión, "
-            "refactors, documentación técnica y respuestas largas sin quedarme a medias.\n\n"
-            "No genero imágenes ni vídeo por mí sola: para arte usa **Gemini** o el "
-            "**Generador de Assets**; para voz e imagen avanzada tienes las herramientas del panel lateral.\n\n"
-            "**Pásame tu consulta** — estoy aquí para ayudarte."
-        ),
-        "Gemini 2.5 Pro (Análisis Multimedia y Arte)": (
-            "### 👋 Hola, soy **Gemini 2.5 Pro**\n\n"
-            "Soy tu motor **multimodal**: **texto**, **imagen** (generación y análisis de adjuntos) "
-            "y **vídeo** (subes un archivo y lo analizo). También combino bien con herramientas y archivos.\n\n"
-            "**Cuéntame qué necesitas** — estoy aquí para ayudarte."
-        ),
-        "OpenRouter (Modelos Gratuitos y de Pago)": (
-            "### 👋 Hola, soy **OpenRouter**\n\n"
-            "Actúo como puerta de acceso a **muchos modelos** (gratuitos y de pago). "
-            "Según el modelo que elijas en tu cuenta, podré ofrecerte distintos estilos de "
-            "razonamiento, código y redacción; la calidad multimodal depende del modelo concreto.\n\n"
-            "**Pásame tu consulta o el objetivo del documento** — estoy aquí para ayudarte."
-        ),
-        "Groq Whisper (Oídos: Transcripción STT)": (
-            "### 👋 Hola, soy **Groq Whisper**\n\n"
-            "Mi función es **transcribir audio a texto** con alta precisión. "
-            "Sube tu archivo en el panel **Groq Whisper** del lateral y pulsa transcribir; "
-            "el resultado se publicará en el chat.\n\n"
-            "**Trae tu audio** cuando quieras — estoy aquí para ayudarte."
-        ),
-        "OpenAI TTS (Voz: Text-to-Speech)": (
-            "### 👋 Hola, soy **OpenAI TTS**\n\n"
-            "Convierto **texto en voz natural**. Escribe o pega el guion en el panel **OpenAI TTS** "
-            "del lateral, elige voz y genera; el audio aparecerá en el chat para escucharlo y descargarlo.\n\n"
-            "**Dime qué quieres que narre** — estoy aquí para ayudarte."
-        ),
-        "Generador de Assets (Manos: Texto a Imagen)": (
-            "### 👋 Hola, soy el **Generador de Assets**\n\n"
-            "Convierto tus **descripciones en imágenes** (según las claves configuradas: OpenAI, Stability, etc.). "
-            "Usa el panel del lateral, escribe el prompt artístico y genera.\n\n"
-            "**Describe la imagen que buscas** — estoy aquí para ayudarte."
-        ),
-    }
 
-    return catalog.get(
-        motor,
-        (
-            "### 👋 Hola\n\n"
-            f"Motor seleccionado: **{motor}**.\n\n"
-            "Puedo ayudarte según las capacidades configuradas en la app. "
-            "**Cuéntame tu objetivo** — estoy aquí para ayudarte."
-        ),
-    )
+def build_provider_greeting(motor: str) -> str:
+    """Markdown de saludo según motor (traducido al idioma de la sesión)."""
+    kind = _motor_greeting_kind(motor)
+    if kind == "custom":
+        name = motor.replace("🤖 ", "", 1).strip() or "model"
+        return t("greeting_custom", name=name)
+    key = {
+        "groq": "greeting_groq",
+        "gemini": "greeting_gemini",
+        "openrouter": "greeting_openrouter",
+        "whisper": "greeting_whisper",
+        "tts": "greeting_tts",
+        "image": "greeting_image",
+        "generic": "greeting_generic",
+    }.get(kind, "greeting_generic")
+    if key == "greeting_generic":
+        return t("greeting_generic", motor=motor)
+    return t(key)
 
 
 def plan_provider_greeting(

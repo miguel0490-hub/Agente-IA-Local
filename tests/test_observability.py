@@ -24,6 +24,16 @@ class TestTracing:
             tracing.init_tracing()
         assert tracing._initialized is False
 
+    def test_otlp_exporter_insecure_env(self, monkeypatch):
+        from src.observability import tracing
+
+        monkeypatch.delenv("OTEL_EXPORTER_OTLP_INSECURE", raising=False)
+        assert tracing._otlp_exporter_insecure() is False
+        monkeypatch.setenv("OTEL_EXPORTER_OTLP_INSECURE", "true")
+        assert tracing._otlp_exporter_insecure() is True
+        monkeypatch.setenv("OTEL_EXPORTER_OTLP_INSECURE", "0")
+        assert tracing._otlp_exporter_insecure() is False
+
     def test_get_tracer_returns_object(self):
         from src.observability.tracing import get_tracer
 

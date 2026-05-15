@@ -2,9 +2,24 @@
 
 **SuperAgente IA Pro — Pre-Production Audit**
 
-**Date:** 2026-05-12
+**Date:** 2026-05-15 (actualizado)
 **Auditor Role:** Principal QA Engineer / SRE / Production Readiness Auditor
 **Python:** 3.14.3 | **Framework:** Streamlit + FastAPI Gateway
+
+### Estado actual (rama de trabajo)
+
+| Área | Estado |
+|------|--------|
+| Tests unitarios | **929 passed** (pytest, sin e2e/load) |
+| SDK Gemini | Migrado a **`google-genai`** (lazy import) |
+| Rendimiento UI | CSS estático, fragments, caché sidebar, paginación chat |
+| Gateway API | Tests con Bearer JWT — **17/17 pass** |
+| TLS | Plantilla `deploy/nginx.ssl.conf.example` + `docker-compose.ssl.yml` |
+| Backups | `scripts/backup_postgres.sh` |
+| CI | Verificación `superagente.css` vs `theme.py` |
+| Vídeo Gemini | Polling entre reruns (`gemini_video_flow.py`) |
+
+**Pendiente operativo:** emitir certificados reales, secretos en `.env`, smoke test en servidor, cron de backups.
 
 ---
 
@@ -23,16 +38,15 @@
 
 | Metric | Result |
 |--------|--------|
-| Total existing tests | 632 |
-| Passed | 605 |
-| Pre-existing failures | 26 |
-| Regressions introduced | **0** |
-| Coverage (tracked modules) | 95.92% |
+| Total tests (pytest, sin e2e/load) | 929+ |
+| Passed | 929 |
+| Skipped | 4 |
+| Gateway (`tests/test_gateway.py`) | 17 passed (auth Bearer) |
+| Coverage (tracked modules) | ~98% |
 
-**Pre-existing failures (NOT regressions):**
-- `test_gateway.py` (16 failures): Tests written before auth enforcement — do not pass auth tokens. Not a regression.
-- `test_ai_functional_audit.py` (8 failures): Mock configuration issues with provider stream methods. Pre-existing.
-- `test_execution_sandbox.py` (2 failures): Require Docker daemon running. Expected in local dev.
+**Notas:**
+- `test_execution_sandbox.py`: requiere Docker local si se ejecuta.
+- E2E Playwright y Locust: ejecutar manualmente antes de producción (`tests/e2e`, `tests/load`).
 
 ### 1.3 Load Testing
 

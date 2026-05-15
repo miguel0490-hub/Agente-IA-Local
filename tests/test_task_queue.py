@@ -28,6 +28,57 @@ def test_get_redis_connection_ok(monkeypatch):
 
     monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
     monkeypatch.setattr(task_queue, "redis", DummyRedis)
+    task_queue._redis_connection = None
+    task_queue._redis_url_cached = None
+    assert task_queue._get_redis_connection() is not None
+
+
+def test_get_redis_connection_reuses_cached_connection(monkeypatch):
+    calls = {"from_url": 0, "ping": 0}
+
+    class Conn:
+        def ping(self):
+            calls["ping"] += 1
+            return True
+
+    class DummyRedis:
+        @staticmethod
+        def from_url(*args, **kwargs):
+            calls["from_url"] += 1
+            return Conn()
+
+    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
+    monkeypatch.setattr(task_queue, "redis", DummyRedis)
+    task_queue._redis_connection = None
+    task_queue._redis_url_cached = None
+    first = task_queue._get_redis_connection()
+    second = task_queue._get_redis_connection()
+    assert first is second
+    assert calls["from_url"] == 1
+    assert calls["ping"] >= 1
+
+
+def test_get_redis_connection_stale_cache_reconnects(monkeypatch):
+    pings = {"n": 0}
+
+    class Conn:
+        def ping(self):
+            pings["n"] += 1
+            # 1ª ping al crear; 2ª ping sobre caché falla; 3ª ping tras reconectar OK
+            if pings["n"] == 2:
+                raise ConnectionError("stale connection")
+            return True
+
+    class DummyRedis:
+        @staticmethod
+        def from_url(*args, **kwargs):
+            return Conn()
+
+    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
+    monkeypatch.setattr(task_queue, "redis", DummyRedis)
+    task_queue._redis_connection = None
+    task_queue._redis_url_cached = None
+    assert task_queue._get_redis_connection() is not None
     assert task_queue._get_redis_connection() is not None
 
 
@@ -61,6 +112,7 @@ def test_enqueue_rag_indexing_ok(monkeypatch):
 
 
 def test_get_redis_connection_handles_exception(monkeypatch):
+    task_queue._redis_connection = None
     class DummyRedis:
         @staticmethod
         def from_url(*args, **kwargs):
@@ -100,7 +152,7 @@ def test_enqueue_conversion_and_transcription_ok(monkeypatch):
     monkeypatch.setattr(task_queue, "Queue", DummyQueue)
     monkeypatch.setattr(task_queue, "_get_redis_connection", lambda: object())
     assert task_queue.enqueue_conversion("in", "out") == "job-conv"
-    assert task_queue.enqueue_transcription(b"a", "f.mp3", "k") == "job-stt"
+    assert task_queue.enqueue_transcription(b"a", "f.mp3", 7) == "job-stt"
 
 
 def test_get_job_status_without_job_or_connection(monkeypatch):

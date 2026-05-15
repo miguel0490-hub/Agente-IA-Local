@@ -36,8 +36,14 @@ def _before_send(event, _hint):  # pragma: no cover
     return event
 
 
+_SENTRY_INITIALIZED = False
+
+
 def init_observability() -> bool:
     """Initializes Sentry when DSN is configured. Returns True if enabled."""
+    global _SENTRY_INITIALIZED
+    if _SENTRY_INITIALIZED:
+        return True
     if not sentry_sdk:
         return False
     dsn = os.getenv("SENTRY_DSN", "").strip()
@@ -51,4 +57,5 @@ def init_observability() -> bool:
         send_default_pii=False,
         before_send=_before_send,
     )
+    _SENTRY_INITIALIZED = True
     return True

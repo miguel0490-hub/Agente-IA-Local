@@ -8,6 +8,14 @@ from datetime import datetime
 import streamlit as st
 
 from src.core.i18n import t
+from src.core.streamlit_cache import invalidate_sidebar_cache
+
+
+def _reset_composer_staging() -> None:
+    """Clears chat-attachment staging when switching or creating chats."""
+    st.session_state.staged_attachments = []
+    st.session_state.attachment_hub_uploader_inc = int(st.session_state.get("attachment_hub_uploader_inc", 0)) + 1
+    st.session_state.form_clear_counter = int(st.session_state.get("form_clear_counter", 0)) + 1
 
 
 def _export_messages_json(messages: list[dict]) -> str:
@@ -46,12 +54,17 @@ def render_chat_management(
     update_chat_title_fn=None,
 ) -> None:
     """Renders chat list/create/select inside sidebar."""
+    if not st.session_state.get("user_id"):
+        return
+
     st.header(t("my_chats"))
 
     if st.button(t("new_chat"), use_container_width=True):
         nuevo_id = create_chat_fn(st.session_state.user_id, t("new_chat_title"))
         st.session_state.chat_id = nuevo_id
         st.session_state.messages = []
+        _reset_composer_staging()
+        invalidate_sidebar_cache()
         st.rerun()
 
     # --- Search ---
@@ -73,6 +86,7 @@ def render_chat_management(
                 if st.button(label, key=f"search_result_{result['chat_id']}", use_container_width=True):
                     st.session_state.chat_id = result["chat_id"]
                     st.session_state.messages = cargar_memoria_fn(result["chat_id"])
+                    _reset_composer_staging()
                     st.session_state.auto_close_sidebar = True
                     st.rerun()
         else:
@@ -94,14 +108,17 @@ def render_chat_management(
         if chat_seleccionado != st.session_state.chat_id:
             st.session_state.chat_id = chat_seleccionado
             st.session_state.messages = cargar_memoria_fn(st.session_state.chat_id)
+            _reset_composer_staging()
             st.session_state.auto_close_sidebar = True
             st.rerun()
     else:
         st.info(t("no_chats"))
-        if not st.session_state.chat_id:
+        if not st.session_state.chat_id and st.session_state.get("user_id"):
             nuevo_id = create_chat_fn(st.session_state.user_id, t("new_chat_title"))
             st.session_state.chat_id = nuevo_id
             st.session_state.messages = []
+            _reset_composer_staging()
+            invalidate_sidebar_cache()
             st.rerun()
 
     # --- Rename current chat ---
@@ -110,6 +127,7 @@ def render_chat_management(
             new_name = st.text_input(t("rename_label"), key="rename_chat_input")
             if st.button(t("rename_button"), key="btn_rename_chat") and new_name.strip():
                 update_chat_title_fn(st.session_state.chat_id, new_name.strip())
+                invalidate_sidebar_cache()
                 st.rerun()
 
     # --- Export ---

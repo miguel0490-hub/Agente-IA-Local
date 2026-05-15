@@ -20,6 +20,8 @@ import io
 import base64
 from pathlib import Path
 
+from src.core.i18n import t
+
 # ─── Extensiones clasificadas como imágenes ────────────────────────────────────
 _IMAGEN_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.tiff', '.tif', '.ico', '.svg'}
 
@@ -39,12 +41,13 @@ _AUDIO_EXTENSIONS = {".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac"}
 
 # ─── Parsers dedicados (Patrón Strategy) ──────────────────────────────────────
 
+
 def _parse_pdf(file_obj) -> str:
     from pypdf import PdfReader
     reader = PdfReader(file_obj)
     paginas = [page.extract_text() for page in reader.pages if page.extract_text()]
     if not paginas:
-        return "⚠️ El PDF no contiene texto extraíble (puede ser un PDF escaneado sin OCR)."
+        return t("doc_pdf_no_text")
     return "\n".join(paginas)
 
 
@@ -65,7 +68,7 @@ def _parse_excel(file_obj, is_ods: bool = False) -> str:
     import pandas as pd
     motor = 'odf' if is_ods else None
     df = pd.read_excel(file_obj, engine=motor)
-    return f"Datos de la hoja de cálculo:\n{df.to_string()}"
+    return t("doc_spreadsheet_prefix") + df.to_string()
 
 
 def _parse_csv(file_obj) -> str:
@@ -76,7 +79,7 @@ def _parse_csv(file_obj) -> str:
     except UnicodeDecodeError:
         file_obj.seek(0)
         df = pd.read_csv(file_obj, encoding='latin-1')
-    return f"Datos del CSV:\n{df.to_string()}"
+    return t("doc_csv_prefix") + df.to_string()
 
 
 def _parse_pptx(file_obj) -> str:
@@ -103,10 +106,11 @@ def _parse_json(file_obj) -> str:
     import json
     try:
         data = json.load(file_obj)
-        return f"Contenido JSON:\n{json.dumps(data, indent=2, ensure_ascii=False)}"
+        return t("doc_json_header") + json.dumps(data, indent=2, ensure_ascii=False)
     except json.JSONDecodeError as e:
         file_obj.seek(0)
-        return f"JSON malformado (mostrando texto plano):\n{_parse_text(file_obj)}\n\nError de parseo: {e}"
+        body = _parse_text(file_obj)
+        return t("doc_json_malformed", body=body, error=e)
 
 
 def _parse_image_as_description(file_obj) -> str:
@@ -116,13 +120,18 @@ def _parse_image_as_description(file_obj) -> str:
     imágenes como objeto PIL. Este parser solo actúa como fallback de contexto.
     """
     raw = file_obj.read()
-    nombre = getattr(file_obj, 'name', 'imagen')
+    nombre = getattr(file_obj, 'name', t("doc_unnamed_image"))
     ext = Path(nombre).suffix.lower().lstrip('.')
     b64 = base64.b64encode(raw).decode('utf-8')
     size_kb = len(raw) / 1024
-    return (
-        f"[Imagen adjunta: {nombre} | Tamaño: {size_kb:.1f} KB | Formato: {ext.upper()}]\n"
-        f"data:image/{ext};base64,{b64[:200]}... (contenido Base64 truncado para contexto)"
+    preview = b64[:200]
+    return t(
+        "doc_image_attachment",
+        name=nombre,
+        size_kb=f"{size_kb:.1f}",
+        ext_label=ext.upper(),
+        mime_ext=ext,
+        preview=preview,
     )
 
 
@@ -195,16 +204,8 @@ def _fallback_universal(file_obj, nombre: str) -> str:
     # Cortocircuito rápido para binarios conocidos
     if ext in _BINARY_EXTENSIONS:
         if ext in _AUDIO_EXTENSIONS:
-            return (
-                f"⚠️ No puedo leer {nombre} como texto.\n"
-                f"Es un archivo de audio ({ext}).\n"
-                "👉 Para analizar su contenido, usa **Transcripción STT — Groq Whisper** en el panel lateral."
-            )
-        return (
-            f"⚠️ No puedo leer {nombre} como texto.\n"
-            f"El formato {ext} es binario y no tiene contenido textual directo.\n"
-            "👉 Puedes convertirlo primero desde **Estudio de Conversión** y luego volver a subirlo."
-        )
+            return t("doc_audio_binary", name=nombre, ext=ext)
+        return t("doc_binary_generic", name=nombre, ext=ext)
 
     # Intentar lectura de texto para extensiones desconocidas
     try:
@@ -213,11 +214,8 @@ def _fallback_universal(file_obj, nombre: str) -> str:
         muestra = raw[:512]
         bytes_no_imprimibles = sum(1 for b in muestra if b < 9 or (14 <= b <= 31) or b == 127)
         if len(muestra) > 0 and (bytes_no_imprimibles / len(muestra)) > 0.30:
-            return (
-                f"⚠️ No pude leer {nombre} como texto legible.\n"
-                f"Detecté contenido binario (extensión: {ext or 'sin extensión'}).\n"
-                "👉 Sugerencia: conviértelo primero a TXT/PDF/DOCX desde **Estudio de Conversión**."
-            )
+            ext_display = ext or "?"
+            return t("doc_binary_heuristic", name=nombre, ext=ext_display)
         # Es texto — decodificar
         try:
             return raw.decode("utf-8")
@@ -225,7 +223,7 @@ def _fallback_universal(file_obj, nombre: str) -> str:
             return raw.decode("latin-1", errors="replace")
 
     except Exception as e:
-        return f"⛔ Error inesperado al leer {nombre}: {e}"
+        return t("doc_read_error", name=nombre, error=e)
 
 
 # ─── Función Pública Principal ─────────────────────────────────────────────────
@@ -243,12 +241,12 @@ def extraer_texto_archivo(file_obj) -> str:
       2. Sin extractor → fallback universal (heurística de texto/binario).
       3. Cualquier excepción interna → capturada y convertida a mensaje de error.
     """
-    nombre = getattr(file_obj, 'name', 'archivo_sin_nombre')
+    nombre = getattr(file_obj, 'name', t("doc_unnamed_file"))
     ext = Path(nombre.lower()).suffix
 
     # Early return: extensiones de vídeo — se procesan por ruta separada en app.py
     if ext in _VIDEO_EXTENSIONS:
-        return f"[Archivo de vídeo detectado: {nombre} — procesado por ruta de análisis de vídeo]"
+        return t("doc_video_placeholder", name=nombre)
 
     extractor = _EXTRACTORS.get(ext)
 
@@ -256,11 +254,9 @@ def extraer_texto_archivo(file_obj) -> str:
         try:
             texto_extraido = extractor(file_obj)
         except Exception as e:
-            texto_extraido = (
-                f"⚠️ Error procesando '{nombre}' con el parser de '{ext}':\n{e}\n\n"
-                f"Intentando lectura como texto plano..."
-                f"\n{_fallback_universal(file_obj, nombre)}"
-            )
+            file_obj.seek(0)
+            fb = _fallback_universal(file_obj, nombre)
+            texto_extraido = t("doc_parse_error", name=nombre, ext=ext, error=e, fallback=fb)
     else:
         # Sin extractor dedicado → Fallback Universal
         texto_extraido = _fallback_universal(file_obj, nombre)
@@ -273,20 +269,13 @@ def extraer_texto_archivo(file_obj) -> str:
 
         job_id = enqueue_rag_indexing(nombre, texto_extraido)
         if job_id:
-            return (
-                f"📚 [ARCHIVO GRANDE ENCOLADO EN CEREBRO RAG]\n"
-                f"El archivo '{nombre}' es demasiado largo ({palabras} palabras) y se ha encolado para indexación asíncrona.\n"
-                f"Job ID: {job_id}\n"
-                f"Cuando termine, usa la herramienta 'query_rag' con palabras clave de tu consulta."
-            )
+            return t("doc_rag_enqueued", name=nombre, words=palabras, job_id=job_id)
 
         rag = RAGService()
-        chunks = rag.index_document(nombre, texto_extraido)
-        return (
-            f"📚 [ARCHIVO GRANDE INDEXADO EN CEREBRO RAG]\n"
-            f"El archivo '{nombre}' es demasiado largo ({palabras} palabras) para leerse completo. "
-            f"Se ha indexado en el Cerebro RAG en {chunks} fragmentos para conservar el rendimiento.\n"
-            f"Para consultar información específica, DEBES usar la herramienta 'query_rag' con palabras clave de tu consulta."
-        )
+        try:
+            chunks = rag.index_document(nombre, texto_extraido)
+        finally:
+            rag.close()
+        return t("doc_rag_indexed", name=nombre, words=palabras, chunks=chunks)
 
     return texto_extraido

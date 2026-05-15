@@ -8,4 +8,5 @@ bandit
 locust
 cyclonedx-bom>=4.0.0
 httpx
-syft
+# syft fija pyarrow antiguo sin ruedas para Python 3.14+; instalar en 3.12–3.13 o omitir en 3.14.
+syft; python_version < "3.14"

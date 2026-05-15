@@ -46,8 +46,10 @@ kubectl create namespace superagente
 kubectl create secret generic superagente-secrets \
   --namespace superagente \
   --from-literal=APP_SECRET_KEY='your-fernet-key' \
+  --from-literal=SERVICE_JWT_SECRET='your-dedicated-service-jwt-secret' \
   --from-literal=DATABASE_URL='postgresql://user:pass@host:5432/superagente' \
-  --from-literal=REDIS_URL='redis://redis:6379/0' \
+  --from-literal=REDIS_PASSWORD='your-redis-password' \
+  --from-literal=REDIS_URL='redis://:your-redis-password@redis:6379/0' \
   --from-literal=POSTGRES_PASSWORD='your-db-password' \
   --from-literal=GEMINI_API_KEY='your-key' \
   --from-literal=GROQ_API_KEY='your-key' \

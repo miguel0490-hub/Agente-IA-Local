@@ -1,9 +1,8 @@
+# Legacy: usar .github/workflows/pipeline.yml (SuperAgente Pipeline)
 name: CI
 
 on:
-  push:
-    branches: [main, master]
-  pull_request:
+  workflow_dispatch:
 
 # Evita el aviso de deprecación Node 20 en actions hasta que los runners usen Node 24 por defecto.
 env:
@@ -32,11 +31,19 @@ jobs:
       - name: Comprobar dependencias mínimas declaradas
         run: grep -qE '^Markdown>=' requirements.txt || (echo "::error::requirements.txt debe incluir Markdown>=... (fusiona origin/master)" && exit 1)
 
+      - name: Verificar CSS estático sincronizado con theme
+        run: |
+          python scripts/generate_static_css.py
+          git diff --exit-code .streamlit/static/superagente.css || (
+            echo "::error::.streamlit/static/superagente.css no coincide con theme.py. Ejecuta scripts/generate_static_css.py y commitea."
+            exit 1
+          )
+
       - name: Install Playwright Browsers
         run: python -m playwright install --with-deps chromium
 
       - name: Unit tests (coverage)
-        run: python -m pytest --ignore=tests/e2e --ignore=tests/load
+        run: python -m pytest --ignore=tests/e2e --ignore=tests/load --cov-fail-under=100
 
       - name: Integration tests
         run: python -m pytest tests/integration/ -v -o "addopts=" --tb=short

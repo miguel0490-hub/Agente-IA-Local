@@ -158,9 +158,9 @@ def _render_action_buttons(user: dict, is_self: bool) -> None:
             if new_pw and len(new_pw) >= 4:
                 ok, msg = admin_reset_password(uid, new_pw)
                 if ok:
-                    st.success(msg)
+                    st.success(t(msg))
                 else:
-                    st.error(msg)
+                    st.error(t(msg))
             else:
                 st.warning(t("admin_min_chars"))
 
@@ -169,7 +169,7 @@ def _render_action_buttons(user: dict, is_self: bool) -> None:
         st.warning(t("admin_confirm_delete").replace("{username}", user['username']))
         cc1, cc2 = st.columns(2)
         with cc1:
-            if st.button(t("admin_confirm"), key=f"cdel_{uid}", type="primary", use_container_width=True):
+            if st.button(t("admin_confirm"), key=f"cdel_{uid}", use_container_width=True):
                 admin_delete_user(uid)
                 st.session_state.pop(f"confirm_del_{uid}", None)
                 st.rerun()
@@ -242,7 +242,7 @@ def _render_contact_messages() -> None:
             )
             st.markdown(
                 f'<p style="color:#94A3B8;font-size:0.85rem;margin:0 0 8px;">'
-                f'De: <strong style="color:#F8FAFC;">@{_esc(msg["username"])}</strong> '
+                f'{t("admin_contact_from")} <strong style="color:#F8FAFC;">@{_esc(msg["username"])}</strong> '
                 f'({_esc(msg["first_name"])} {_esc(msg["last_name"])}) — '
                 f'{_esc(msg["email"])} — {date_str} — {status_label}</p>',
                 unsafe_allow_html=True,
@@ -293,7 +293,7 @@ def _render_contact_messages() -> None:
                     st.session_state[f"confirm_del_msg_{mid}"] = True
 
                 if st.session_state.get(f"confirm_del_msg_{mid}"):
-                    if st.button(t("admin_confirm"), key=f"cdel_msg_{mid}", type="primary", use_container_width=True):
+                    if st.button(t("admin_confirm"), key=f"cdel_msg_{mid}", use_container_width=True):
                         delete_contact_message(mid)
                         st.session_state.pop(f"confirm_del_msg_{mid}", None)
                         st.rerun()

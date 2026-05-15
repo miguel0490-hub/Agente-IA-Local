@@ -14,8 +14,9 @@ def initialize_session_state() -> None:
         "chat_id": None,
         "onboarding_done": False,
         "messages": [],
-        "rol_activo": "Asistente General (Tech Lead)",
+        "rol_activo": "tech_lead",
         "motor_activo_idx": 0,
+        "selector_rol": "tech_lead",
         "onboarding_step": 0,
         "temp_keys": {},
         "auto_close_sidebar": False,
@@ -25,6 +26,8 @@ def initialize_session_state() -> None:
         "form_clear_counter": 0,
         "security_events": [],
         "last_activity_ts": time.time(),
+        "staged_attachments": [],
+        "attachment_hub_uploader_inc": 0,
     }
     for key, value in defaults.items():
         if key not in st.session_state:

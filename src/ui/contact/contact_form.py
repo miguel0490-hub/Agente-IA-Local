@@ -51,10 +51,13 @@ def render_contact_form() -> None:
                 st.warning(t("contact_min_chars"))
             else:
                 user_id = st.session_state.get("user_id")
+                if not user_id:
+                    st.error(t("auth_service_unavailable"))
+                    return
                 create_contact_message(user_id, subject, message.strip())
                 _notify_admins(user_id, subject, message.strip())
                 from src.ui.components.notifications import add_notification
-                add_notification("📩 Mensaje enviado", "Tu mensaje ha sido enviado al administrador.", type="success")
+                add_notification(t("contact_notif_title"), t("contact_notif_body"), type="success")
                 st.success(t("contact_success"))
 
 

@@ -1,7 +1,10 @@
 [theme]
-primaryColor='#00F2FE'
-backgroundColor='#0B0C10'
-secondaryBackgroundColor='#1E293B'
+# Hereda tokens coherentes (inputs, placeholders); sin esto, texto de widgets puede quedar oscuro.
+base = "dark"
+primaryColor = "#00F2FE"
+backgroundColor = "#0B0C10"
+secondaryBackgroundColor = "#1E293B"
+textColor = "#F8FAFC"
 
 [server]
 port = 8501

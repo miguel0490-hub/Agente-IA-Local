@@ -3,10 +3,32 @@
 from __future__ import annotations
 
 import html
+
 import streamlit as st
 
+from src.core.i18n import SUPPORTED_LANGUAGES, get_language, set_language, t
+from src.core.session_manager import clear_user_session
 from src.ui.components.notifications import get_unread_count, render_notification_center
-from src.core.i18n import t
+
+# ISO 3166-1 alpha-2 for flagcdn (PNG flags — evita fallos de emoji en Windows).
+_SIDEBAR_FLAG_CC: dict[str, str] = {
+    "es": "es",
+    "en": "gb",
+    "fr": "fr",
+    "de": "de",
+    "pt": "pt",
+}
+
+
+def _sidebar_flag_image_url(code: str) -> str:
+    cc = _SIDEBAR_FLAG_CC.get(code, code)
+    return f"https://flagcdn.com/w20/{cc}.png"
+
+
+def _on_sidebar_language_change() -> None:
+    code = st.session_state.get("sidebar_lang_selectbox")
+    if code in SUPPORTED_LANGUAGES:
+        set_language(code)
 
 
 def render_sidebar_profile(
@@ -19,6 +41,40 @@ def render_sidebar_profile(
     panel_ajustes_fn=None,
 ) -> None:
     """Renders user profile card with integrated hamburger menu."""
+    lang_codes = list(SUPPORTED_LANGUAGES.keys())
+    current_lang = get_language()
+    if current_lang not in lang_codes:
+        current_lang = "es"
+
+    st.markdown(
+        f'<p class="sidebar-language-hint" style="margin:-0.45rem 0 0.2rem 0;padding:0;'
+        f'text-align:left;line-height:1.3;'
+        f'color:#94a3b8;font-weight:500;">{html.escape(t("sidebar_language_choose_label"))}</p>',
+        unsafe_allow_html=True,
+    )
+    flag_col, sel_col = st.columns([0.12, 0.88], gap="small")
+    with flag_col:
+        st.markdown(
+            f'<div class="sidebar-language-flag-cell" style="min-height:2.2rem;display:flex;align-items:center;justify-content:center;">'
+            f'<img src="{html.escape(_sidebar_flag_image_url(current_lang))}" width="22" height="16" '
+            f'style="display:block;border-radius:2px;object-fit:cover;'
+            f'box-shadow:0 0 0 1px rgba(255,255,255,0.08);" alt="" loading="lazy"/>'
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+    with sel_col:
+        st.selectbox(
+            t("sidebar_language"),
+            options=lang_codes,
+            index=lang_codes.index(current_lang),
+            format_func=lambda c: SUPPORTED_LANGUAGES[c],
+            key="sidebar_lang_selectbox",
+            label_visibility="collapsed",
+            on_change=_on_sidebar_language_change,
+        )
+
+    st.markdown('<div style="height:0.2rem;"></div>', unsafe_allow_html=True)
+
     user_data = get_user_profile_fn(st.session_state.user_id)
     if user_data:
         safe_first = html.escape(user_data.get("first_name", t("username")))
@@ -58,14 +114,11 @@ def render_sidebar_profile(
 
         st.divider()
 
-        st.markdown('<div class="danger-btn">', unsafe_allow_html=True)
-        if st.button(t("logout"), use_container_width=True, type="primary", key="sidebar_logout"):
+        if st.button(t("logout"), use_container_width=True, key="sidebar_logout"):
             cookie_manager.delete("auth_token")
             clear_remember_token_fn(st.session_state.user_id)
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
+            clear_user_session()
             st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
 
     if st.session_state.get("show_admin"):
         st.session_state.show_admin = False

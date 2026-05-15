@@ -8,14 +8,18 @@ import re
 import time
 
 import streamlit as st
+
 from src.core.auth_cookies import set_auth_cookie
+from src.core.logger import get_logger
 from src.core.request_context import get_remote_address
 from src.core.security import check_scoped_rate_limit
 from src.core.security import get_login_backoff_seconds
 from src.core.security import get_login_rate_limit_config
-from src.core.security import login_security_backend_ready
 from src.core.security import record_login_failure
+from src.core.security import reset_login_throttle_state
 from src.core.i18n import t
+
+_logger = get_logger(__name__)
 
 
 def render_auth_gate(
@@ -30,14 +34,29 @@ def render_auth_gate(
     if st.session_state.user_id:
         return
 
+    # Desbloqueo opcional: CLEAR_LOGIN_RATELIMIT=1 en .env (una vez por sesión de navegador).
+    if (os.getenv("CLEAR_LOGIN_RATELIMIT") or "").strip().lower() in ("1", "true", "yes", "on"):
+        if "_login_rl_cleared_env" not in st.session_state:
+            reset_login_throttle_state()
+            st.session_state._login_rl_cleared_env = True
+
     col_left, central_col, col_right = st.columns([1, 2, 1])
     with central_col:
-        st.markdown(f"<h1 style='text-align: center; color: #00F2FE;'>⚡ {t('app_title')}</h1>", unsafe_allow_html=True)
-        st.markdown(f"<h3 style='text-align: center; color: #A0AAB5;'>{t('auth_subtitle')}</h3>", unsafe_allow_html=True)
+        st.markdown(
+            f"""
+<div class="hero-header">
+    <h1 class="hero-title">⚡ {t("app_title")}</h1>
+    <p class="hero-subtitle">{t("header_subtitle")}</p>
+</div>
+""",
+            unsafe_allow_html=True,
+        )
 
-        tab1, tab2, tab3 = st.tabs([t("login"), t("register"), t("forgot_password")])
+        tab_login, tab_register, tab_forgot = st.tabs(
+            [t("login"), t("register"), t("forgot_password")]
+        )
 
-        with tab1:
+        with tab_login:
             with st.form("login_form"):
                 username = st.text_input(t("username"), placeholder=t("username_placeholder"), autocomplete="username")
                 password = st.text_input(t("password"), type="password", autocomplete="current-password")
@@ -47,61 +66,82 @@ def render_auth_gate(
                     if username and password:
                         remote = get_remote_address()
                         user_key = f"user:{str(username).strip().lower()}"
-                        ip_key = f"ip:{remote}"
-                        ip_limit, ip_window = get_login_rate_limit_config("ip")
                         user_limit, user_window = get_login_rate_limit_config("user")
-                        if not login_security_backend_ready():
-                            st.error(
-                                t("auth_service_unavailable")
+                        # Streamlit local: sin IP real, los intentos se acumulan muy rápido en el cubo por usuario.
+                        if remote == "unknown":
+                            user_limit = max(user_limit, 250)
+                            user_window = max(user_window, 900)
+                        # Streamlit en local suele no exponer IP real → "unknown" compartía un
+                        # solo cubo `ip:unknown` y se bloqueaba a todos en pocos intentos.
+                        ip_key = f"ip:{remote}" if remote != "unknown" else None
+                        user_limit, user_window = get_login_rate_limit_config("user")
+                        if ip_key:
+                            ip_limit, ip_window = get_login_rate_limit_config("ip")
+                            ip_denied = not check_scoped_rate_limit(
+                                ip_key, "login", limit=ip_limit, window_seconds=ip_window
                             )
-                        elif not check_scoped_rate_limit(ip_key, "login", limit=ip_limit, window_seconds=ip_window):
+                        else:
+                            ip_denied = False
+                        if ip_denied:
                             st.error(t("auth_too_many_ip"))
                         elif not check_scoped_rate_limit(
                             user_key, "login", limit=user_limit, window_seconds=user_window
                         ):
                             st.error(t("auth_too_many_user"))
                         else:
-                            ip_wait = get_login_backoff_seconds(ip_key, "ip")
+                            ip_wait = get_login_backoff_seconds(ip_key, "ip") if ip_key else 0
                             user_wait = get_login_backoff_seconds(user_key, "user")
                             wait_seconds = max(ip_wait, user_wait)
                             if wait_seconds > 0:
-                                st.error(
-                                    t("auth_backoff", wait_seconds=wait_seconds)
-                                )
+                                st.error(t("auth_backoff", wait_seconds=wait_seconds))
                             else:
-                                with st.spinner(t("authenticating")):
-                                    success, result = verify_login_fn(username, password)
-                                if success:
-                                    st.session_state.user_id = result
-                                    keys = get_user_api_keys_fn(result)
-                                    st.session_state.api_keys = keys
-                                    if keys:
-                                        st.session_state.onboarding_done = True
-                                    if remember_me:
-                                        import uuid
+                                try:
+                                    with st.spinner(t("authenticating")):
+                                        success, result = verify_login_fn(username, password)
+                                    if success:
+                                        from src.core.streamlit_cache import invalidate_sidebar_cache
 
-                                        _token = uuid.uuid4().hex
-                                        remember_days = int((os.getenv("REMEMBER_ME_DAYS") or "7").strip() or "7")
-                                        expires_date = datetime.datetime.now() + datetime.timedelta(days=max(1, remember_days))
-                                        update_remember_token_fn(result, _token, expires_date)
-                                        set_auth_cookie(cookie_manager, _token, expires_date, key="set_auth_cookie")
+                                        st.session_state.user_id = result
+                                        st.session_state.pop("_app_dialogs", None)
+                                        invalidate_sidebar_cache()
+                                        keys = get_user_api_keys_fn(result)
+                                        st.session_state.api_keys = keys
+                                        if keys:
+                                            st.session_state.onboarding_done = True
+                                        if remember_me:
+                                            import uuid
+
+                                            _token = uuid.uuid4().hex
+                                            remember_days = int((os.getenv("REMEMBER_ME_DAYS") or "7").strip() or "7")
+                                            expires_date = datetime.datetime.now() + datetime.timedelta(
+                                                days=max(1, remember_days)
+                                            )
+                                            update_remember_token_fn(result, _token, expires_date)
+                                            try:
+                                                set_auth_cookie(cookie_manager, _token, expires_date, key="set_auth_cookie")
+                                            except Exception as exc:
+                                                _logger.warning("No se pudo fijar cookie Remember Me: %s", exc)
+                                        else:
+                                            cookie_manager.delete("auth_token")
+                                            clear_remember_token_fn(result)
+                                        time.sleep(0.8)
+                                        st.rerun()
                                     else:
-                                        cookie_manager.delete("auth_token")
-                                        clear_remember_token_fn(result)
-                                    time.sleep(0.8)
-                                    st.rerun()
-                                else:
-                                    record_login_failure(ip_key, "ip")
-                                    record_login_failure(user_key, "user")
-                                    st.error(result)
+                                        if ip_key:
+                                            record_login_failure(ip_key, "ip")
+                                        record_login_failure(user_key, "user")
+                                        st.error(t(result))
+                                except Exception:
+                                    _logger.exception("Fallo no controlado en login")
+                                    st.error(t("auth_login_exception"))
                     else:
                         st.warning(t("fill_all_fields"))
 
-        with tab2:
+        with tab_register:
             with st.form("register_form"):
                 first_name = st.text_input(t("first_name"), placeholder=t("first_name_placeholder"))
                 last_name = st.text_input(t("last_name"), placeholder=t("last_name_placeholder"))
-                email = st.text_input(t("email"), placeholder="ejemplo@correo.com")
+                email = st.text_input(t("email"), placeholder=t("email_placeholder"))
                 new_username = st.text_input(t("new_username"), placeholder=t("new_username_placeholder"))
                 new_password = st.text_input(t("new_password"), type="password")
                 confirm_password = st.text_input(t("confirm_password"), type="password")
@@ -121,13 +161,11 @@ def render_auth_gate(
                             from src.services.email_service import send_verification_email
 
                             send_verification_email(email, first_name, token)
-                            st.success(
-                                t("welcome_registered", name=first_name)
-                            )
+                            st.success(t("welcome_registered", name=first_name))
                         else:
-                            st.error(result)
+                            st.error(t(result))
 
-        with tab3:
+        with tab_forgot:
             with st.form("forgot_password_form"):
                 rec_email = st.text_input(t("registered_email"))
                 if st.form_submit_button(t("send_recovery"), use_container_width=True):

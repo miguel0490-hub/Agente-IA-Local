@@ -96,3 +96,18 @@ def t(key: str, **kwargs) -> str:
         except (KeyError, IndexError):
             pass
     return text
+
+
+def all_locale_values_for_key(key: str) -> frozenset[str]:
+    """All translated values of ``key`` across supported languages (e.g. default chat titles)."""
+    out: set[str] = set()
+    for code in SUPPORTED_LANGUAGES:
+        data = _load_language(code)
+        val = data.get(key)
+        if val:
+            out.add(val)
+    return frozenset(out)
+
+
+# Prefix for tool-loop "user" messages hidden from chat UI (multilingual body after prefix).
+TOOL_CONTEXT_PREFIX = "[INTERNAL_TOOL_CONTEXT]\n"

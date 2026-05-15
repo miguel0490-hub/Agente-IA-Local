@@ -24,6 +24,18 @@ logger = get_logger(__name__)
 _PUBLIC_PATHS = frozenset({"/api/v1/health", "/api/v1/status", "/api/docs", "/openapi.json"})
 
 
+def _cors_allow_headers() -> list[str]:
+    if os.getenv("ENVIRONMENT", "").strip().lower() == "production":
+        return [
+            "Authorization",
+            "Content-Type",
+            "X-Correlation-ID",
+            "Accept",
+            "X-Requested-With",
+        ]
+    return ["*"]
+
+
 async def require_auth(request: Request) -> None:
     """Dependency that enforces service token auth on protected endpoints."""
     if request.url.path in _PUBLIC_PATHS:
@@ -50,7 +62,7 @@ app.add_middleware(
     allow_origins=os.getenv("CORS_ORIGINS", "").split(",") if os.getenv("CORS_ORIGINS") else [],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
-    allow_headers=["*"],
+    allow_headers=_cors_allow_headers(),
 )
 
 

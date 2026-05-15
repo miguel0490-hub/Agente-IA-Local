@@ -1,0 +1,30 @@
+# Overlay TLS para producción. Uso:
+#   docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d
+#
+# Antes: copia deploy/nginx.ssl.conf.example → deploy/nginx.ssl.conf
+# y sustituye tu-dominio.com. Obtén certificados con el servicio certbot (perfil ssl-init).
+
+services:
+  nginx:
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ${NGINX_SSL_CONFIG:-./deploy/nginx.ssl.conf.example}:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/certbot/conf:/etc/letsencrypt:ro
+      - ./deploy/certbot/www:/var/www/certbot:ro
+
+  certbot:
+    image: certbot/certbot:v2.11.0
+    profiles:
+      - ssl-init
+    volumes:
+      - ./deploy/certbot/conf:/etc/letsencrypt
+      - ./deploy/certbot/www:/var/www/certbot
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        certbot certonly --webroot -w /var/www/certbot \
+          -d "$${NGINX_SSL_DOMAIN}" --email "$${LETSENCRYPT_EMAIL}" \
+          --agree-tos --non-interactive

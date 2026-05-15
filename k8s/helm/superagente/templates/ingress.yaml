@@ -29,14 +29,30 @@ spec:
     - host: {{ .host | quote }}
       http:
         paths:
-          {{- range .paths }}
-          - path: {{ .path }}
-            pathType: {{ .pathType }}
+          {{- if $.Values.gateway.enabled }}
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "superagente.fullname" $ }}-gateway
+                port:
+                  name: http
+          {{- end }}
+          {{- if $.Values.monitoring.enabled }}
+          - path: /health
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "superagente.fullname" $ }}-monitoring
+                port:
+                  name: http
+          {{- end }}
+          - path: /
+            pathType: Prefix
             backend:
               service:
                 name: {{ include "superagente.fullname" $ }}-app
                 port:
                   name: http
-          {{- end }}
     {{- end }}
 {{- end }}

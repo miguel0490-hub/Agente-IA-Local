@@ -179,6 +179,7 @@ def test_get_login_backoff_config_reads_env(monkeypatch):
 
 
 def test_login_backoff_seconds_increases_and_caps(monkeypatch):
+    monkeypatch.setenv("LOGIN_REQUIRE_REDIS", "0")
     monkeypatch.setattr(security, "_get_redis_client", lambda: None)
     monkeypatch.setenv("RATE_LIMIT_LOGIN_USER_WINDOW", "300")
     monkeypatch.setenv("LOGIN_BACKOFF_USER_BASE_SECONDS", "2")
@@ -259,6 +260,46 @@ def test_append_event_redis_exception_fallback_memory(monkeypatch):
     assert len(security._RATE_LIMITS["k"]) == 1
 
 
+def test_reset_login_throttle_state_clears_memory(monkeypatch):
+    monkeypatch.setattr(security, "_get_redis_client", lambda: None)
+    security._RATE_LIMITS.clear()
+    security._RATE_LIMITS["ratelimit:login:user:x"] = [1.0, 2.0]
+    security._RATE_LIMITS["loginfail:user:y"] = [3.0]
+    security._RATE_LIMITS["ratelimit:chat:u"] = [4.0]
+    security.reset_login_throttle_state()
+    assert "ratelimit:login:user:x" not in security._RATE_LIMITS
+    assert "loginfail:user:y" not in security._RATE_LIMITS
+    assert "ratelimit:chat:u" in security._RATE_LIMITS
+
+
+def test_reset_login_throttle_state_clears_redis_keys(monkeypatch):
+    deleted: list[str] = []
+
+    class FakeRedis:
+        def scan_iter(self, match=None):
+            if match == "ratelimit:login:*":
+                yield "ratelimit:login:ip:1"
+            elif match == "loginfail:*":
+                yield "loginfail:user:1"
+
+        def delete(self, key):
+            deleted.append(key)
+
+    monkeypatch.setattr(security, "_get_redis_client", lambda: FakeRedis())
+    security.reset_login_throttle_state()
+    assert "ratelimit:login:ip:1" in deleted
+    assert "loginfail:user:1" in deleted
+
+
+def test_reset_login_throttle_state_redis_errors_are_swallowed(monkeypatch):
+    class BadRedis:
+        def scan_iter(self, match=None):
+            raise RuntimeError("redis unavailable")
+
+    monkeypatch.setattr(security, "_get_redis_client", lambda: BadRedis())
+    security.reset_login_throttle_state()
+
+
 def test_login_security_backend_ready_without_requirement(monkeypatch):
     monkeypatch.delenv("LOGIN_REQUIRE_REDIS", raising=False)
     monkeypatch.setattr(security, "_get_redis_client", lambda: None)
@@ -266,12 +307,14 @@ def test_login_security_backend_ready_without_requirement(monkeypatch):
 
 
 def test_login_security_backend_ready_requires_redis(monkeypatch):
+    monkeypatch.setattr(security, "_LOGIN_REDIS_DEGRADE_WARNED", False)
     monkeypatch.setenv("LOGIN_REQUIRE_REDIS", "1")
     monkeypatch.setattr(security, "_get_redis_client", lambda: None)
-    assert security.login_security_backend_ready() is False
+    assert security.login_security_backend_ready() is True
 
 
 def test_login_security_backend_ready_with_redis(monkeypatch):
+    monkeypatch.setattr(security, "_LOGIN_REDIS_DEGRADE_WARNED", False)
     monkeypatch.setenv("LOGIN_REQUIRE_REDIS", "1")
 
     class DummyClient:
@@ -281,14 +324,14 @@ def test_login_security_backend_ready_with_redis(monkeypatch):
     assert security.login_security_backend_ready() is True
 
 
-def test_login_rate_limit_fail_closed_without_redis(monkeypatch):
+def test_login_rate_limit_memory_fallback_without_redis(monkeypatch):
     monkeypatch.setenv("LOGIN_REQUIRE_REDIS", "1")
     monkeypatch.setattr(security, "_get_redis_client", lambda: None)
     security._RATE_LIMITS.clear()
-    assert security.check_scoped_rate_limit("ip:1.2.3.4", "login", limit=5, window_seconds=60) is False
+    assert security.check_scoped_rate_limit("ip:1.2.3.4", "login", limit=5, window_seconds=60) is True
 
 
-def test_login_rate_limit_fail_closed_when_redis_raises(monkeypatch):
+def test_login_rate_limit_memory_fallback_when_redis_raises(monkeypatch):
     monkeypatch.setenv("LOGIN_REQUIRE_REDIS", "1")
 
     class DummyClient:
@@ -297,21 +340,23 @@ def test_login_rate_limit_fail_closed_when_redis_raises(monkeypatch):
 
     monkeypatch.setattr(security, "_get_redis_client", lambda: DummyClient())
     security._RATE_LIMITS.clear()
-    assert security.check_scoped_rate_limit("ip:1.2.3.4", "login", limit=5, window_seconds=60) is False
+    assert security.check_scoped_rate_limit("ip:1.2.3.4", "login", limit=5, window_seconds=60) is True
 
 
-def test_loginfail_count_fail_closed_without_redis(monkeypatch):
+def test_loginfail_count_memory_without_redis(monkeypatch):
     monkeypatch.setenv("LOGIN_REQUIRE_REDIS", "1")
     monkeypatch.setattr(security, "_get_redis_client", lambda: None)
-    assert security._count_recent_events("loginfail:user:x", 300) == 10**9
+    security._RATE_LIMITS.clear()
+    assert security._count_recent_events("loginfail:user:x", 300) == 0
 
 
-def test_loginfail_append_skipped_without_redis_when_required(monkeypatch):
+def test_loginfail_append_memory_without_redis_when_required(monkeypatch):
     monkeypatch.setenv("LOGIN_REQUIRE_REDIS", "1")
     monkeypatch.setattr(security, "_get_redis_client", lambda: None)
     security._RATE_LIMITS.clear()
     security._append_event("loginfail:user:z", 300)
-    assert "loginfail:user:z" not in security._RATE_LIMITS
+    assert "loginfail:user:z" in security._RATE_LIMITS
+    assert len(security._RATE_LIMITS["loginfail:user:z"]) == 1
 
 
 def test_loginfail_count_redis_exception_when_required(monkeypatch):
@@ -322,7 +367,8 @@ def test_loginfail_count_redis_exception_when_required(monkeypatch):
             raise RuntimeError("boom")
 
     monkeypatch.setattr(security, "_get_redis_client", lambda: DummyClient())
-    assert security._count_recent_events("loginfail:user:x", 300) == 10**9
+    security._RATE_LIMITS.clear()
+    assert security._count_recent_events("loginfail:user:x", 300) == 0
 
 
 def test_loginfail_append_redis_exception_when_required(monkeypatch):
@@ -338,4 +384,5 @@ def test_loginfail_append_redis_exception_when_required(monkeypatch):
     monkeypatch.setattr(security, "_get_redis_client", lambda: DummyClient())
     security._RATE_LIMITS.clear()
     security._append_event("loginfail:user:z", 300)
-    assert "loginfail:user:z" not in security._RATE_LIMITS
+    assert "loginfail:user:z" in security._RATE_LIMITS
+    assert len(security._RATE_LIMITS["loginfail:user:z"]) == 1

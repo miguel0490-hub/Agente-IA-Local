@@ -29,15 +29,15 @@ def render_onboarding_gate(update_api_keys_fn) -> None:
             st.markdown(t("onboarding_step1_title"))
             st.markdown(t("onboarding_step1_desc"))
             st.caption(t("onboarding_step1_caption"))
-            key = st.text_input("Gemini API Key", type="password", key="gemini_input")
+            key = st.text_input(t("onboarding_api_gemini"), type="password", key="gemini_input")
             c1, c2 = st.columns(2)
             with c1:
-                if st.button(t("onboarding_save_next"), type="primary", key="gemini_save", use_container_width=True):
+                if st.button(t("onboarding_save_next"), key="gemini_save", use_container_width=True):
                     st.session_state.temp_keys["GEMINI_API_KEY"] = key
                     st.session_state.onboarding_step += 1
                     st.rerun()
             with c2:
-                if st.button(t("onboarding_skip_this"), type="secondary", key="gemini_skip", use_container_width=True):
+                if st.button(t("onboarding_skip_this"), key="gemini_skip", use_container_width=True):
                     st.session_state.temp_keys["GEMINI_API_KEY"] = ""
                     st.toast(t("onboarding_toast_gemini_skip"), icon="⚠️")
                     st.session_state.onboarding_step += 1
@@ -47,15 +47,15 @@ def render_onboarding_gate(update_api_keys_fn) -> None:
             st.markdown(t("onboarding_step2_title"))
             st.markdown(t("onboarding_step2_desc"))
             st.caption(t("onboarding_step2_caption"))
-            key = st.text_input("Groq API Key", type="password", key="groq_input")
+            key = st.text_input(t("onboarding_api_groq"), type="password", key="groq_input")
             c1, c2 = st.columns(2)
             with c1:
-                if st.button(t("onboarding_save_next"), type="primary", key="groq_save", use_container_width=True):
+                if st.button(t("onboarding_save_next"), key="groq_save", use_container_width=True):
                     st.session_state.temp_keys["GROQ_API_KEY"] = key
                     st.session_state.onboarding_step += 1
                     st.rerun()
             with c2:
-                if st.button(t("onboarding_skip_this"), type="secondary", key="groq_skip", use_container_width=True):
+                if st.button(t("onboarding_skip_this"), key="groq_skip", use_container_width=True):
                     st.session_state.temp_keys["GROQ_API_KEY"] = ""
                     st.toast(t("onboarding_toast_groq_skip"), icon="⚠️")
                     st.session_state.onboarding_step += 1
@@ -65,15 +65,15 @@ def render_onboarding_gate(update_api_keys_fn) -> None:
             st.markdown(t("onboarding_step3_title"))
             st.markdown(t("onboarding_step3_desc"))
             st.caption(t("onboarding_step3_caption"))
-            key = st.text_input("OpenRouter API Key", type="password", key="or_input")
+            key = st.text_input(t("onboarding_api_openrouter"), type="password", key="or_input")
             c1, c2 = st.columns(2)
             with c1:
-                if st.button(t("onboarding_save_next"), type="primary", key="or_save", use_container_width=True):
+                if st.button(t("onboarding_save_next"), key="or_save", use_container_width=True):
                     st.session_state.temp_keys["OPENROUTER_API_KEY"] = key
                     st.session_state.onboarding_step += 1
                     st.rerun()
             with c2:
-                if st.button(t("onboarding_skip_this"), type="secondary", key="or_skip", use_container_width=True):
+                if st.button(t("onboarding_skip_this"), key="or_skip", use_container_width=True):
                     st.session_state.temp_keys["OPENROUTER_API_KEY"] = ""
                     st.toast(t("onboarding_toast_or_skip"), icon="⚠️")
                     st.session_state.onboarding_step += 1
@@ -83,15 +83,15 @@ def render_onboarding_gate(update_api_keys_fn) -> None:
             st.markdown(t("onboarding_step4_title"))
             st.markdown(t("onboarding_step4_desc"))
             st.caption(t("onboarding_step4_caption"))
-            key = st.text_input("OpenAI API Key", type="password", key="oai_input")
+            key = st.text_input(t("onboarding_api_openai"), type="password", key="oai_input")
             c1, c2 = st.columns(2)
             with c1:
-                if st.button(t("onboarding_save_next"), type="primary", key="oai_save", use_container_width=True):
+                if st.button(t("onboarding_save_next"), key="oai_save", use_container_width=True):
                     st.session_state.temp_keys["OPENAI_API_KEY"] = key
                     st.session_state.onboarding_step += 1
                     st.rerun()
             with c2:
-                if st.button(t("onboarding_skip_this"), type="secondary", key="oai_skip", use_container_width=True):
+                if st.button(t("onboarding_skip_this"), key="oai_skip", use_container_width=True):
                     st.session_state.temp_keys["OPENAI_API_KEY"] = ""
                     st.toast(t("onboarding_toast_oai_skip"), icon="⚠️")
                     st.session_state.onboarding_step += 1
@@ -101,15 +101,15 @@ def render_onboarding_gate(update_api_keys_fn) -> None:
             st.markdown(t("onboarding_step5_title"))
             st.markdown(t("onboarding_step5_desc"))
             st.caption(t("onboarding_step5_caption"))
-            key = st.text_input("Stability AI API Key", type="password", key="stab_input")
+            key = st.text_input(t("onboarding_api_stability"), type="password", key="stab_input")
             c1, c2 = st.columns(2)
             with c1:
-                if st.button(t("onboarding_save_next"), type="primary", key="stab_save", use_container_width=True):
+                if st.button(t("onboarding_save_next"), key="stab_save", use_container_width=True):
                     st.session_state.temp_keys["STABILITY_API_KEY"] = key
                     st.session_state.onboarding_step += 1
                     st.rerun()
             with c2:
-                if st.button(t("onboarding_skip"), type="secondary", key="stab_skip", use_container_width=True):
+                if st.button(t("onboarding_skip"), key="stab_skip", use_container_width=True):
                     st.session_state.temp_keys["STABILITY_API_KEY"] = ""
                     st.toast(t("onboarding_toast_stab_skip"), icon="⚠️")
                     st.session_state.onboarding_step += 1
@@ -122,7 +122,14 @@ def render_onboarding_gate(update_api_keys_fn) -> None:
             if st.session_state.temp_custom_models:
                 st.markdown(t("onboarding_models_registered"))
                 for cm in st.session_state.temp_custom_models:
-                    st.success(f"✅ {cm['name']} — `{cm['model_id']}` en `{cm['base_url']}`")
+                    st.success(
+                        t(
+                            "onboarding_model_registered_line",
+                            name=cm["name"],
+                            model_id=cm["model_id"],
+                            base_url=cm["base_url"],
+                        )
+                    )
                 st.divider()
 
             with st.form("custom_model_form", clear_on_submit=True):
@@ -150,7 +157,7 @@ def render_onboarding_gate(update_api_keys_fn) -> None:
                     else:
                         st.warning(t("onboarding_fill_all"))
 
-            if st.button(t("onboarding_finish"), type="primary", key="finish_onboarding", use_container_width=True):
+            if st.button(t("onboarding_finish"), key="finish_onboarding", use_container_width=True):
                 st.session_state.temp_keys["CUSTOM_MODELS"] = st.session_state.temp_custom_models
                 st.session_state.onboarding_step += 1
                 st.rerun()
@@ -158,7 +165,7 @@ def render_onboarding_gate(update_api_keys_fn) -> None:
         elif step == 6:
             st.markdown(t("onboarding_complete_title"))
             st.markdown(t("onboarding_complete_guide"))
-            if st.button(t("onboarding_start_button"), type="primary", key="start_app", use_container_width=True):
+            if st.button(t("onboarding_start_button"), key="start_app", use_container_width=True):
                 final_keys = {k: v for k, v in st.session_state.temp_keys.items() if v}
                 update_api_keys_fn(st.session_state.user_id, final_keys)
                 st.session_state.api_keys = final_keys

@@ -7,7 +7,6 @@ cost constraints, latency requirements, and provider health.
 from __future__ import annotations
 
 import os
-import random
 import threading
 import time
 from dataclasses import dataclass, field
@@ -138,7 +137,7 @@ class ModelRouter:
 
         return min(candidates, key=lambda m: m.cost_per_1k_tokens)
 
-    def get_failover(self, failed_provider: str, **constraints: Any) -> ModelProfile | None:
+    def get_failover(self, failed_provider: str, **_constraints: Any) -> ModelProfile | None:
         """Returns a fallback model when the primary provider fails."""
         alternatives = [
             m for m in self._models

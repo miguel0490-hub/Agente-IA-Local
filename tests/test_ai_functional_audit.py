@@ -43,38 +43,34 @@ class TestGeminiProvider:
         assert path is None
         assert "omitida" in error
 
-    @patch("src.services.llm_provider._lazy_types")
-    @patch("src.services.llm_provider._lazy_ggenai")
-    def test_stream_chat_yields_text(self, mock_lazy_ggenai, mock_lazy_types):
+    @patch("src.services.google_genai.get_genai_client")
+    def test_stream_chat_yields_text(self, mock_get_client):
         from src.services.llm_provider import GeminiProvider
-        mock_ggenai = MagicMock()
-        mock_lazy_ggenai.return_value = mock_ggenai
-        mock_lazy_types.return_value = MagicMock()
+
+        mock_chunk = MagicMock()
+        mock_chunk.text = "respuesta de prueba"
+        mock_chunk.candidates = []
+
+        def _stream():
+            yield mock_chunk
 
         mock_chat = MagicMock()
-        mock_frag = MagicMock()
-        mock_frag.text = "respuesta de prueba"
-        mock_frag.candidates = []
-        mock_chat.send_message_stream.return_value = [mock_frag]
-        mock_ggenai.Client.return_value.chats.create.return_value = mock_chat
+        mock_chat.send_message_stream.return_value = _stream()
+
+        mock_client = MagicMock()
+        mock_client.chats.create.return_value = mock_chat
+        mock_get_client.return_value = mock_client
 
         provider = GeminiProvider(api_key="test-key")
         chunks = list(provider.stream_chat(["Hola"], []))
         assert "respuesta de prueba" in "".join(chunks)
 
-    @patch("src.services.llm_provider._lazy_types")
-    @patch("src.services.llm_provider._lazy_ggenai")
-    def test_generar_imagen_success(self, mock_lazy_ggenai, mock_lazy_types):
+    @patch("src.services.llm_provider._imagen_via_rest")
+    def test_generar_imagen_success(self, mock_imagen):
         from src.services.llm_provider import GeminiProvider
-        mock_ggenai = MagicMock()
-        mock_lazy_ggenai.return_value = mock_ggenai
-        mock_lazy_types.return_value = MagicMock()
 
-        mock_image = MagicMock()
-        mock_image.image.image_bytes = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
-        mock_result = MagicMock()
-        mock_result.generated_images = [mock_image]
-        mock_ggenai.Client.return_value.models.generate_images.return_value = mock_result
+        png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
+        mock_imagen.return_value = (png, None)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             with patch("src.services.llm_provider.CARPETA_IMAGENES", tmpdir):
@@ -119,7 +115,11 @@ class TestGroqProvider:
         assert "parte2" in full
 
     @patch("src.services.llm_provider._lazy_groq")
-    def test_fallback_model_on_failure(self, mock_lazy_groq):
+    @patch(
+        "src.services.llm_provider.GroqProvider._groq_model_candidates",
+        return_value=["llama-3.3-70b-versatile", "llama-3.1-70b-versatile"],
+    )
+    def test_fallback_model_on_failure(self, _mock_candidates, mock_lazy_groq):
         from src.services.llm_provider import GroqProvider
 
         choice = MagicMock()
@@ -130,11 +130,13 @@ class TestGroqProvider:
 
         mock_client = MagicMock()
         calls = [0]
+
         def create_side_effect(**kwargs):
             calls[0] += 1
             if calls[0] == 1:
                 raise Exception("model_decommissioned")
             return [chunk]
+
         mock_client.chat.completions.create.side_effect = create_side_effect
         mock_lazy_groq.return_value.return_value = mock_client
 
@@ -428,6 +430,15 @@ class TestToolCallingPipeline:
         assert ToolValidator.authorize({"action": "delete_file"}) is None
         assert ToolValidator.authorize({"action": "run_system_command"}) is None
 
+    def test_authorize_respects_role_registry(self, monkeypatch):
+        from src.core.agent_tools import ToolValidator
+        import src.agents.registry as registry
+
+        monkeypatch.setattr(registry, "is_tool_allowed_for_role", lambda role, action: False)
+        assert (
+            ToolValidator.authorize({"action": "search_web", "query": "q"}, role_name="tech_lead") is None
+        )
+
     def test_parse_tool_calls_extracts_create_file(self):
         from src.core.agent_tools import parse_tool_calls
         text = '```json\n{"action":"create_file","filename":"test.py","content":"print(1)"}\n```'
@@ -574,6 +585,7 @@ class TestRAGService:
         import src.services.rag_service as rag_mod
         original_db = rag_mod.DB_PATH
         test_db = os.path.join(tempfile.gettempdir(), "test_rag_audit.db")
+        rag = None
         try:
             rag_mod.DB_PATH = test_db
             rag = rag_mod.RAGService()
@@ -582,8 +594,9 @@ class TestRAGService:
             results = rag.query("Python lenguaje")
             assert len(results) > 0
             assert "Python" in results[0]["content"]
-            rag.conn.close()
         finally:
+            if rag is not None:
+                rag.close()
             rag_mod.DB_PATH = original_db
             if os.path.exists(test_db):
                 os.remove(test_db)
@@ -592,13 +605,15 @@ class TestRAGService:
         import src.services.rag_service as rag_mod
         original_db = rag_mod.DB_PATH
         test_db = os.path.join(tempfile.gettempdir(), "test_rag_audit_empty.db")
+        rag = None
         try:
             rag_mod.DB_PATH = test_db
             rag = rag_mod.RAGService()
             results = rag.query("xyznonexistent")
             assert results == []
-            rag.conn.close()
         finally:
+            if rag is not None:
+                rag.close()
             rag_mod.DB_PATH = original_db
             if os.path.exists(test_db):
                 os.remove(test_db)
@@ -1028,6 +1043,23 @@ class TestConverterService:
     def test_get_file_type_unknown(self):
         from src.services.converter_service import get_file_type
         assert get_file_type("file.xyz") == "unknown"
+
+    def test_normalize_output_extension_rejects_path_traversal(self):
+        from src.services.converter_service import normalize_output_extension
+
+        with pytest.raises(ValueError):
+            normalize_output_extension("../pdf")
+        with pytest.raises(ValueError):
+            normalize_output_extension("pdf/evil")
+
+    def test_run_conversion_rejects_unknown_input_type(self):
+        from src.services.converter_service import run_conversion
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            src = os.path.join(tmpdir, "payload.xyz")
+            dst = os.path.join(tmpdir, "payload.pdf")
+            Path(src).write_text("not convertible", encoding="utf-8")
+            assert run_conversion(src, dst) is False
 
     def test_convert_image_png_to_jpg(self):
         from src.services.converter_service import convert_image
