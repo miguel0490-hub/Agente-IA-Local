@@ -28,6 +28,56 @@ def test_get_redis_connection_ok(monkeypatch):
 
     monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
     monkeypatch.setattr(task_queue, "redis", DummyRedis)
+    task_queue._redis_connection = None
+    task_queue._redis_url_cached = None
+    assert task_queue._get_redis_connection() is not None
+
+
+def test_get_redis_connection_reuses_cached_connection(monkeypatch):
+    calls = {"from_url": 0, "ping": 0}
+
+    class Conn:
+        def ping(self):
+            calls["ping"] += 1
+            return True
+
+    class DummyRedis:
+        @staticmethod
+        def from_url(*args, **kwargs):
+            calls["from_url"] += 1
+            return Conn()
+
+    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
+    monkeypatch.setattr(task_queue, "redis", DummyRedis)
+    task_queue._redis_connection = None
+    task_queue._redis_url_cached = None
+    first = task_queue._get_redis_connection()
+    second = task_queue._get_redis_connection()
+    assert first is second
+    assert calls["from_url"] == 1
+    assert calls["ping"] >= 1
+
+
+def test_get_redis_connection_stale_cache_reconnects(monkeypatch):
+    state = {"fail_ping": False}
+
+    class Conn:
+        def ping(self):
+            if state["fail_ping"]:
+                raise ConnectionError("stale connection")
+            return True
+
+    class DummyRedis:
+        @staticmethod
+        def from_url(*args, **kwargs):
+            return Conn()
+
+    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
+    monkeypatch.setattr(task_queue, "redis", DummyRedis)
+    task_queue._redis_connection = None
+    task_queue._redis_url_cached = None
+    assert task_queue._get_redis_connection() is not None
+    state["fail_ping"] = True
     assert task_queue._get_redis_connection() is not None
 
 

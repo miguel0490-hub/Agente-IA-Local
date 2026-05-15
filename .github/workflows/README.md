@@ -29,6 +29,10 @@
 
 Crea los environments en **Settings → Environments** y activa **Required reviewers** en `production`.
 
+### Dependency Review en PRs
+
+Activa **Settings → Code security → Dependency graph** en el repositorio. Si está desactivado, el job `Dependency Review` muestra aviso pero no bloquea el pipeline.
+
 ## Workflows legacy
 
 `ci.yml`, `deploy.yml` y `supply-chain.yml` quedan solo con disparo manual para no duplicar ejecuciones. Usa siempre **SuperAgente Pipeline**.

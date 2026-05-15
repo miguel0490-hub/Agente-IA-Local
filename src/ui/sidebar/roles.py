@@ -37,6 +37,7 @@ def get_roles(
     language: str,
 ) -> dict:
     """Catálogo de roles: solo el prompt por modo de operación."""
+    _ = language  # discriminador de caché Streamlit al cambiar idioma
     from src.agents.capabilities import CAPABILITY_PROFILES
     from src.agents.prompt_loader import load_role_prompt
 

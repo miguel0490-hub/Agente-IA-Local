@@ -7,6 +7,45 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
+def test_redact_text_masks_secrets():
+    from src.core.observability import _redact_text
+
+    out = _redact_text("api_key=SECRET token=abc password=pw")
+    assert "SECRET" not in out
+    assert "[REDACTED]" in out
+
+
+def test_before_send_redacts_event():
+    from src.core.observability import _before_send
+
+    event = {
+        "message": "api_key=leak",
+        "exception": {"values": [{"value": "password=leak2"}]},
+    }
+    result = _before_send(event, {})
+    assert "[REDACTED]" in result["message"]
+    assert "[REDACTED]" in result["exception"]["values"][0]["value"]
+
+
+def test_init_observability_without_sentry_sdk():
+    import src.core.observability as obs
+
+    obs._SENTRY_INITIALIZED = False
+    with patch.object(obs, "sentry_sdk", None):
+        assert obs.init_observability() is False
+
+
+def test_init_observability_without_dsn():
+    import src.core.observability as obs
+
+    obs._SENTRY_INITIALIZED = False
+    fake_sdk = MagicMock()
+    with patch.object(obs, "sentry_sdk", fake_sdk):
+        with patch.dict("os.environ", {"SENTRY_DSN": ""}, clear=False):
+            assert obs.init_observability() is False
+            fake_sdk.init.assert_not_called()
+
+
 def test_init_observability_only_initializes_sentry_once():
     import src.core.observability as obs
 

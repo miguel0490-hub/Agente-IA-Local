@@ -272,6 +272,34 @@ def test_reset_login_throttle_state_clears_memory(monkeypatch):
     assert "ratelimit:chat:u" in security._RATE_LIMITS
 
 
+def test_reset_login_throttle_state_clears_redis_keys(monkeypatch):
+    deleted: list[str] = []
+
+    class FakeRedis:
+        def scan_iter(self, match=None):
+            if match == "ratelimit:login:*":
+                yield "ratelimit:login:ip:1"
+            elif match == "loginfail:*":
+                yield "loginfail:user:1"
+
+        def delete(self, key):
+            deleted.append(key)
+
+    monkeypatch.setattr(security, "_get_redis_client", lambda: FakeRedis())
+    security.reset_login_throttle_state()
+    assert "ratelimit:login:ip:1" in deleted
+    assert "loginfail:user:1" in deleted
+
+
+def test_reset_login_throttle_state_redis_errors_are_swallowed(monkeypatch):
+    class BadRedis:
+        def scan_iter(self, match=None):
+            raise RuntimeError("redis unavailable")
+
+    monkeypatch.setattr(security, "_get_redis_client", lambda: BadRedis())
+    security.reset_login_throttle_state()
+
+
 def test_login_security_backend_ready_without_requirement(monkeypatch):
     monkeypatch.delenv("LOGIN_REQUIRE_REDIS", raising=False)
     monkeypatch.setattr(security, "_get_redis_client", lambda: None)
